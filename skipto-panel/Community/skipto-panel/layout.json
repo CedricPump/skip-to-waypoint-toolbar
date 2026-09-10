@@ -1,0 +1,34 @@
+{
+  "content": [
+    {
+      "path": "html_ui/icons/toolbar/ICON_TOOLBAR_SKIPTO_PANEL.svg",
+      "size": 2511,
+      "date": 134334585824624913
+    },
+    {
+      "path": "html_ui/InGamePanels/skipto-panel/MyPanel.css",
+      "size": 398,
+      "date": 134334585824583778
+    },
+    {
+      "path": "html_ui/InGamePanels/skipto-panel/MyPanel.html",
+      "size": 2060,
+      "date": 134334585824583778
+    },
+    {
+      "path": "html_ui/InGamePanels/skipto-panel/MyPanel.js",
+      "size": 1037,
+      "date": 134334585824593823
+    },
+    {
+      "path": "html_ui/Textures/Menu/Toolbar/ICON_TOOLBAR_SKIPTO_PANEL.svg",
+      "size": 2511,
+      "date": 134334585824613922
+    },
+    {
+      "path": "InGamePanels/skipto-panel.spb",
+      "size": 677,
+      "date": 134334586124567651
+    }
+  ]
+}

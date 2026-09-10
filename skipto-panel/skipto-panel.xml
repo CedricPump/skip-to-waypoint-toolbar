@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="Windows-1252"?>
+<SimBase.Document Type="InGamePanels" version="1,0">
+  <Filename>skipto-panel.spb</Filename>
+  <InGamePanels.InGamePanelDefinition id="skipto-panel-panel" Name="skipto" url="html_ui/InGamePanels/skipto-panel/MyPanel.html" resizeDirections="Both" minWidth="16" minHeight="16" defaultWidth="64" defaultHeight="64" defaultTop="33" defaultRight="2" icon="ICON_TOOLBAR_SKIPTO_PANEL" buttonVisible="true">
+  </InGamePanels.InGamePanelDefinition>
+</SimBase.Document>

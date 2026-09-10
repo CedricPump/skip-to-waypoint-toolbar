@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/SCSS/common.css" />
+    <link rel="stylesheet" href="/templates/virtualScroll/virtualScroll.css">
+
+    <script type="text/javascript" src="/JS/coherent.js"></script>
+    <script type="text/javascript" src="/JS/common.js"></script>
+    <script type="text/javascript" src="/JS/dataStorage.js"></script>
+    <script type="text/javascript" src="/JS/buttons.js"></script>
+    <script type="text/javascript" src="/JS/simvar.js"></script>
+    <script type="text/javascript" src="/JS/Services/ToolBarPanels.js"></script>
+
+    <link rel="import" href="/templates/ingameUi/ingameUi.html" />
+    <link rel="import" href="/templates/ingameUiHeader/ingameUiHeader.html" />
+    <link rel="import" href="/templates/checkbox/checkbox.html" />
+    <link rel="import" href="/templates/NewPushButton/NewPushButton.html" />
+    <link rel="import" href="/templates/ToggleButton/ToggleButton.html" />
+    <link rel="import" href="/templates/tabMenu/tabMenu.html" />
+    <link rel="import" href="/templates/NewListButton/NewListButton.html" />
+
+    <script type="text/javascript" src="/Pages/VCockpit/Instruments/Shared/BaseInstrument.js"></script>
+    <script type="text/javascript" src="/JS/debug.js"></script>
+
+    <link rel="stylesheet" href="./MyPanel.css" />
+    <script defer="defer" src="./MyPanel.js"></script>
+</head>
+
+<body id="my-panel" class="border-box">
+    <my-panel>
+        <ingame-ui id="my-panel-frame"
+            panel-id="{project-id}"
+            class="ingameUiFrame panelInvisible"
+            title="{project-title}"
+            content-fit="false"
+            min-width="30"
+            min-height="10">
+            <section id="MainDisplay">
+                <div class="panel-header">
+                    <div class="panel-title">Skip to Waypoint</div>
+                    <div id="flightplan-status" class="flightplan-status">Checking...</div>
+                </div>
+
+                <div class="waypoint-card">
+                    <div class="waypoint-label">Selected fix</div>
+                    <div id="next-waypoint-ident" class="waypoint-ident">--</div>
+                    <div id="next-waypoint-type" class="waypoint-type">Waypoint</div>
+                </div>
+
+                <div class="selector-group">
+                    <label for="waypoint-select" class="select-label">Next waypoint</label>
+                    <select id="waypoint-select" size="1"></select>
+                </div>
+
+                <div class="coord-grid">
+                    <div class="coord-item">
+                        <span>Lat</span>
+                        <strong id="next-waypoint-lat">--</strong>
+                    </div>
+                    <div class="coord-item">
+                        <span>Lon</span>
+                        <strong id="next-waypoint-lon">--</strong>
+                    </div>
+                    <div class="coord-item">
+                        <span>Alt</span>
+                        <strong id="next-waypoint-alt">--</strong>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button id="btnTeleport" class="panel-btn primary" type="button">Teleport to selected</button>
+                    <button id="btnRefresh" class="panel-btn" type="button">Refresh</button>
+                </div>
+
+                <div class="debug-group">
+                    <label id="debug-log-label" for="txt-debug-log">Debug Log:</label>
+                    <textarea id="txt-debug-log" readonly>Ready.</textarea>
+                </div>
+
+                <div class="creditline">v1.1.0 © 2025 skip-to-waypoint</div>
+            </section>
+        </ingame-ui>
+    </my-panel>
+</body>
+</html>
