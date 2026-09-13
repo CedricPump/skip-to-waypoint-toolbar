@@ -25,7 +25,8 @@
     <script type="text/javascript" src="/JS/debug.js"></script>
 
     <link rel="stylesheet" href="./MyPanel.css" />
-    <script defer="defer" src="./MyPanel.js"></script>
+    <script defer="defer" type="text/javascript" src="./GeoMath.js"></script>
+    <script defer="defer" type="text/javascript" src="./MyPanel.js"></script>
 </head>
 
 <body id="my-panel" class="border-box">
@@ -64,8 +65,12 @@
                         <strong id="next-waypoint-lon">--</strong>
                     </div>
                     <div class="coord-item">
-                        <span>Alt</span>
-                        <strong id="next-waypoint-alt">--</strong>
+                        <span>Dist</span>
+                        <strong id="next-waypoint-distance">--</strong>
+                    </div>
+                    <div class="coord-item">
+                        <span>Hdg</span>
+                        <strong id="next-waypoint-heading">--</strong>
                     </div>
                 </div>
 
