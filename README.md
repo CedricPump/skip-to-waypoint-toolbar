@@ -29,12 +29,32 @@ The current implementation includes:
 
 - a compact in-game panel for waypoint telemetry
 - display of the active next waypoint
-- coordinates and altitude output for the selected fix
+- coordinates and heading output for the selected fix
 - a teleport action to the current waypoint target
 - altitude preservation on teleport
 - heading adjustment toward the selected waypoint
 - a default MSFS-style panel appearance using the native panel/template approach instead of custom color overrides
 - a simplified architecture that avoids unsupported route-list SimVars
+- a waypoint source selector for GPS, SimBrief, and Manual planning, with GPS active today and the others reserved for future work
+
+## Waypoint source selection
+
+The panel now exposes a source selector with three options:
+
+1. GPS
+   - uses the native MSFS GPS next waypoint variables
+   - this is the only source currently implemented and active
+   - it works with the stock GPS route when available
+
+2. SimBrief (future)
+   - reserved for route import and waypoint planning
+   - not active yet
+
+3. Manual (future)
+   - reserved for text-based waypoint or airport lookup
+   - not active yet
+
+When a future source is selected, the panel shows a pending state and keeps GPS as the current active path until that feature is implemented.
 
 ## Planned features
 

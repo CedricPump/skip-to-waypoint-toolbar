@@ -50,6 +50,23 @@
                     <div id="next-waypoint-type" class="waypoint-type">Waypoint</div>
                 </div>
 
+                <div class="source-group">
+                    <label class="select-label">Waypoint source</label>
+                    <div id="waypoint-source-buttons" class="source-button-group" role="tablist" aria-label="Waypoint source selector">
+                        <button id="source-gps" class="source-button active" type="button" data-source="gps">GPS</button>
+                        <button id="source-simbrief" class="source-button" type="button" data-source="simbrief">SimBrief</button>
+                        <button id="source-manual" class="source-button" type="button" data-source="manual">Manual</button>
+                    </div>
+                </div>
+
+                <div class="manual-group">
+                    <label for="manual-waypoint-input" class="select-label">Manual waypoint</label>
+                    <div class="manual-input-row">
+                        <input id="manual-waypoint-input" type="text" placeholder="EGLL / KDEN / RWY 27" disabled />
+                        <button id="btnManualLookup" class="panel-btn" type="button">Lookup</button>
+                    </div>
+                </div>
+
                 <div class="selector-group">
                     <label for="waypoint-select" class="select-label">Next waypoint</label>
                     <select id="waypoint-select" size="1"></select>
@@ -81,7 +98,7 @@
 
                 <div class="debug-group">
                     <label id="debug-log-label" for="txt-debug-log">Debug Log:</label>
-                    <textarea id="txt-debug-log" readonly>Ready.</textarea>
+                    <textarea id="txt-debug-log" readonly>Not initialized.</textarea>
                 </div>
 
                 <div class="creditline">v1.1.0 © 2025 skip-to-waypoint</div>

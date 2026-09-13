@@ -78,7 +78,9 @@ html, body, #my-panel, ingame-ui, #MainDisplay {
     opacity: 0.75;
 }
 
-.selector-group {
+.source-group,
+.selector-group,
+.manual-group {
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
@@ -92,12 +94,59 @@ html, body, #my-panel, ingame-ui, #MainDisplay {
     opacity: 0.8;
 }
 
-#waypoint-select {
+.source-button-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.25rem;
+}
+
+.source-button {
+    min-height: 2.05rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.source-button.active {
+    background: rgba(78, 166, 255, 0.28);
+    border-color: rgba(78, 166, 255, 0.8);
+}
+
+.source-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.manual-input-row {
+    display: flex;
+    gap: 0.35rem;
+}
+
+#waypoint-select,
+#manual-waypoint-input {
     min-height: 2.05rem;
     padding: 0.35rem 0.5rem;
     border: 1px solid rgba(255, 255, 255, 0.22);
     font-size: 1rem;
     font-weight: 600;
+}
+
+#manual-waypoint-input {
+    flex: 1 1 auto;
+    width: 100%;
+    color: inherit;
+}
+
+#manual-waypoint-input:disabled {
+    opacity: 0.55;
+}
+
+#btnManualLookup {
+    flex: 0 0 auto;
+    min-width: 5rem;
 }
 
 .coord-grid {
