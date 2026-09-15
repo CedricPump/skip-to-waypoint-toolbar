@@ -408,16 +408,18 @@ class MyPanel extends TemplateElement {
 
     async onLookupClicked() {
         const text = this.manualWaypointInput ? this.manualWaypointInput.value : '';
-        this.log(`Lookup button pressed with text: "${text}"`, 'INFO');
-        const url = `https://skyvector.com/api/search?q=${encodeURIComponent(text)}&i=301&z=21&ck=&lat=0.0&lon=0.0&rand=12345`;
+        const trimmedText = text.trim();
+        const queryName = /^\d+$/.test(trimmedText) ? 'userid' : 'username';
+        const url = `https://www.simbrief.com/api/xml.fetcher.php?${queryName}=${encodeURIComponent(trimmedText)}&json=1`;
 
         try {
             const response = await fetch(url);
-            const body = await response.text();
-            this.log(`Lookup response code: ${response.status}`, 'INFO');
-            this.log(`Lookup response body: ${body}`, 'INFO');
+            const flightplan = await response.json();
+            const origin = flightplan.origin && flightplan.origin.icao_code;
+            const destination = flightplan.destination && flightplan.destination.icao_code;
+            this.log(`Flightplan: ${origin || '--'} - ${destination || '--'}`, 'INFO');
         } catch (e) {
-            this.log(`Lookup request failed: ${e && e.message ? e.message : e}`, 'ERROR');
+            this.log(`Flightplan request failed: ${e && e.message ? e.message : e}`, 'ERROR');
         }
     }
 
