@@ -212,7 +212,7 @@ class MyPanel extends TemplateElement {
 
             if (this.btnTeleport) this.btnTeleport.addEventListener('click', () => this.onTeleportClicked());
             if (this.btnRefresh) this.btnRefresh.addEventListener('click', () => this.refreshWaypointState());
-            if (this.waypointSelect) this.waypointSelect.addEventListener('change', () => this.onWaypointSelected());
+            if (this.waypointSelect) this.waypointSelect.addEventListener('OnValidate', () => this.onWaypointSelected());
             if (this.btnLookup) this.btnLookup.addEventListener('click', () => this.onLookupClicked());
 
             this.refreshIntervalMs = 60000;
@@ -459,7 +459,7 @@ class MyPanel extends TemplateElement {
 
     onWaypointSelected() {
         if (!this.waypointSelect) return;
-        const selectedValue = this.waypointSelect.value;
+        const selectedValue = this.waypointSelect.metadata;
         if (!selectedValue) return;
 
         try {
@@ -539,8 +539,16 @@ class MyPanel extends TemplateElement {
                 this.latNode.textContent = '--';
                 this.lonNode.textContent = '--';
                 if (this.waypointSelect) {
-                    this.waypointSelect.innerHTML = '<option value="">No waypoint data</option>';
-                    this.waypointSelect.selectedIndex = 0;
+                    this.waypointSelect.SetData({
+                        daChoices: ['No waypoint data'],
+                        daMetadatas: [''],
+                        iDefault: 0,
+                        bLoop: false,
+                        bDisabled: true,
+                        bHideButtons: true,
+                        sTitle: 'Next waypoint',
+                        sEmpty: ''
+                    });
                 }
                 this.log('No valid next waypoint data is available.', 'INFO');
                 return;
@@ -549,17 +557,19 @@ class MyPanel extends TemplateElement {
             const selected = entries[0];
 
             if (this.waypointSelect) {
-                this.waypointSelect.innerHTML = '';
                 const upcomingFixes = this.flightplanFixes.length
                     ? this.flightplanFixes.slice(this.activeFlightplanFixIndex)
                     : [selected];
-                upcomingFixes.forEach((fix) => {
-                    const option = document.createElement('option');
-                    option.value = JSON.stringify(fix);
-                    option.textContent = `${fix.ident} (${String(fix.type || 'WAYPOINT').toUpperCase()})`;
-                    this.waypointSelect.appendChild(option);
+                this.waypointSelect.SetData({
+                    daChoices: upcomingFixes.map((fix) => `${fix.ident} (${String(fix.type || 'WAYPOINT').toUpperCase()})`),
+                    daMetadatas: upcomingFixes.map((fix) => JSON.stringify(fix)),
+                    iDefault: 0,
+                    bLoop: false,
+                    bDisabled: false,
+                    bHideButtons: false,
+                    sTitle: 'Next waypoint',
+                    sEmpty: ''
                 });
-                this.waypointSelect.selectedIndex = 0;
             }
 
             // Distance is informational only; keep the waypoint coordinates visible even if math fails.
@@ -594,8 +604,8 @@ class MyPanel extends TemplateElement {
         try {
             // Read the currently selected route fix and reject the action if it is invalid.
             let target = null;
-            if (this.waypointSelect && this.waypointSelect.value) {
-                target = JSON.parse(this.waypointSelect.value);
+            if (this.waypointSelect && this.waypointSelect.metadata) {
+                target = JSON.parse(this.waypointSelect.metadata);
             }
 
             if (!target) {
