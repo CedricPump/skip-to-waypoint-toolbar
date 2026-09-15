@@ -163,6 +163,7 @@ class MyPanel extends TemplateElement {
         this.longDistancePauseMs = 1500;
         this.longDistancePressureThresholdInHg = 0.03;
         this.longDistanceAirspeedThresholdKts = 5;
+        this.simBriefUserStorageKey = 'skipto-panel-simbrief-user';
         this.initialize();
     }
 
@@ -198,6 +199,14 @@ class MyPanel extends TemplateElement {
             this.waypointSelect = this.querySelector('#waypoint-select');
             this.manualWaypointInput = this.querySelector('#manual-waypoint-input');
             this.btnLookup = this.querySelector('#btnLookup');
+
+            if (this.manualWaypointInput) {
+                try {
+                    this.manualWaypointInput.value = localStorage.getItem(this.simBriefUserStorageKey) || '';
+                } catch (e) {
+                    this.log(`Unable to restore SimBrief user: ${e && e.message ? e.message : e}`, 'WARN');
+                }
+            }
 
             if (this.btnTeleport) this.btnTeleport.addEventListener('click', () => this.onTeleportClicked());
             if (this.btnRefresh) this.btnRefresh.addEventListener('click', () => this.refreshWaypointState());
@@ -409,6 +418,17 @@ class MyPanel extends TemplateElement {
     async onLookupClicked() {
         const text = this.manualWaypointInput ? this.manualWaypointInput.value : '';
         const trimmedText = text.trim();
+
+        try {
+            if (trimmedText) {
+                localStorage.setItem(this.simBriefUserStorageKey, trimmedText);
+            } else {
+                localStorage.removeItem(this.simBriefUserStorageKey);
+            }
+        } catch (e) {
+            this.log(`Unable to save SimBrief user: ${e && e.message ? e.message : e}`, 'WARN');
+        }
+
         const queryName = /^\d+$/.test(trimmedText) ? 'userid' : 'username';
         const url = `https://www.simbrief.com/api/xml.fetcher.php?${queryName}=${encodeURIComponent(trimmedText)}&json=1`;
 
@@ -418,6 +438,16 @@ class MyPanel extends TemplateElement {
             const origin = flightplan.origin && flightplan.origin.icao_code;
             const destination = flightplan.destination && flightplan.destination.icao_code;
             this.log(`Flightplan: ${origin || '--'} - ${destination || '--'}`, 'INFO');
+
+            const fixes = flightplan.navlog && Array.isArray(flightplan.navlog.fix)
+                ? flightplan.navlog.fix
+                : [];
+            fixes.forEach((fix, index) => {
+                const ident = fix && fix.ident ? fix.ident : '--';
+                const latitude = fix && fix.pos_lat !== undefined ? fix.pos_lat : '--';
+                const longitude = fix && fix.pos_long !== undefined ? fix.pos_long : '--';
+                this.log(`Waypoint ${index + 1}: ${ident} (${latitude}, ${longitude})`, 'INFO');
+            });
         } catch (e) {
             this.log(`Flightplan request failed: ${e && e.message ? e.message : e}`, 'ERROR');
         }
