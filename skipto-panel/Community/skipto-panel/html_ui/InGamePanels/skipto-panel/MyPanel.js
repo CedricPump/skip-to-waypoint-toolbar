@@ -405,9 +405,19 @@ class MyPanel extends TemplateElement {
         }
     }
 
-    onLookupClicked() {
+    async onLookupClicked() {
         const text = this.manualWaypointInput ? this.manualWaypointInput.value : '';
         this.log(`Lookup button pressed with text: "${text}"`, 'INFO');
+        const url = `https://skyvector.com/api/search?q=${encodeURIComponent(text)}&i=301&z=21&ck=&lat=0.0&lon=0.0&rand=12345`;
+
+        try {
+            const response = await fetch(url);
+            const body = await response.text();
+            this.log(`Lookup response code: ${response.status}`, 'INFO');
+            this.log(`Lookup response body: ${body}`, 'INFO');
+        } catch (e) {
+            this.log(`Lookup request failed: ${e && e.message ? e.message : e}`, 'ERROR');
+        }
     }
 
     refreshWaypointState() {
