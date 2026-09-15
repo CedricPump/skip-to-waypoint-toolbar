@@ -6,20 +6,15 @@ A lightweight MSFS in-game toolbar panel for moving the aircraft directly to the
 
 This project started with a simple goal: make waypoint skipping fast and predictable without turning the tool into a heavy custom flight management system.
 
-The current version focuses on the core workflow only: read the active waypoint, display it, and teleport the aircraft there safely. The design intentionally avoids unsupported SimVar assumptions and keeps the implementation focused on data the simulator exposes directly.
+The current version uses a SimBrief flight plan as its route source. It displays the reconciled next fix separately from a selectable upcoming-fix control, then teleports the aircraft to the selected fix. The design avoids relying on the native GPS waypoint SimVars because many airliners do not feed the simulator GPS system.
 
 The project is intentionally minimal and conservative. It aims to stay compatible with the default MSFS panel feel while leaving room for future upgrades such as route-aware waypoint selection or SimBrief-based flight-plan support.
 
 ## How it works
 
-The panel reads the active next waypoint from the simulator using the standard GPS waypoint variables:
+The panel fetches the latest SimBrief flight plan as JSON using a configured username or Pilot ID. The plan's `navlog.fix` entries provide waypoint identifiers and coordinates. The panel chooses a forward next fix, periodically reconciles it at a low frequency, and keeps the selected teleport target independent from the next-fix guidance display.
 
-- GPS WP NEXT ID
-- GPS WP NEXT LAT
-- GPS WP NEXT LON
-- GPS WP NEXT ALT
-
-It then displays the selected fix and allows the user to teleport the aircraft to that location. During teleport, the aircraft keeps its current altitude and rotates to the true bearing from the starting aircraft position toward the target waypoint.
+During teleport, the aircraft keeps its current altitude and rotates to the true bearing from the starting aircraft position toward the selected target waypoint.
 
 This makes the reposition feel controlled rather than abrupt, while still keeping the operation fast and easy to use.
 
@@ -28,13 +23,15 @@ This makes the reposition feel controlled rather than abrupt, while still keepin
 The current implementation includes:
 
 - a compact in-game panel for waypoint telemetry
-- display of the active next waypoint
-- coordinates and altitude output for the selected fix
-- a teleport action to the current waypoint target
+- display of the reconciled next fix with latitude, longitude, distance, and bearing
+- an MSFS-compatible `NewListButton` for selecting upcoming fixes
+- coordinates for the selected teleport fix
+- a teleport action to the selected flight-plan fix
 - altitude preservation on teleport
 - heading adjustment toward the selected waypoint
 - a default MSFS-style panel appearance using the native panel/template approach instead of custom color overrides
-- a simplified architecture that avoids unsupported route-list SimVars
+- a simplified architecture that avoids unsupported native GPS route assumptions
+- an editable `SimBriefConfig.js` file for the initial SimBrief username or Pilot ID
 
 ## Planned features
 
@@ -46,16 +43,17 @@ These are the planned improvements for later iterations of the project.
 - improve spacing, hierarchy, and overall panel cleanliness without fighting the default theme
 
 ### SimBrief and route-aware waypoint support
-- parse a real flight plan source and expose the full route
-- show a list of upcoming waypoints instead of only the immediate next fix
-- allow waypoint selection from a route list
-- prefer SimBrief data when available, while keeping the current simulator waypoint fallback as a safe default
+- improve authentication/configuration handling
+- preserve or restore the last selected fix when appropriate
+- refine route reconciliation for flights loaded in progress
 
 ### Teleport behavior improvements
 - add an optional offset so the aircraft can land just before the waypoint instead of on top of it
 - calculate the offset based on the line from the current position to the target waypoint
 - maintain the correct aircraft orientation after landing on the offset location
 - account for realistic turn geometry and approach behavior at cruise speed
+- calculate fuel consumption on teleport
+- investigate whether SimBrief estimated fuel values are available for each navlog fix
 
 ### Flight realism and simulation quality
 - optionally calculate and apply fuel changes on teleport
@@ -64,5 +62,8 @@ These are the planned improvements for later iterations of the project.
 
 ### Future exploration
 - integrate a richer flight-plan workflow when the project moves beyond the current minimal implementation
-- revisit the route selection UI only when a real route source becomes available
 - evaluate additional automation or safety checks if the feature set becomes more advanced
+
+## Platform constraints
+
+The panel runs inside the MSFS HTML UI environment. Native HTML controls such as `<select>` are unreliable in this environment, so route selection uses the simulator's `NewListButton` template instead. Browser storage is also not treated as durable configuration; the initial SimBrief identity is supplied through the bundled `html_ui/InGamePanels/skipto-panel/SimBriefConfig.js` file.

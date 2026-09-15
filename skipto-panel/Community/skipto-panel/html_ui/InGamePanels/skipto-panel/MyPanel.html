@@ -25,6 +25,7 @@
     <script type="text/javascript" src="/JS/debug.js"></script>
 
     <link rel="stylesheet" href="./MyPanel.css" />
+    <script defer="defer" type="text/javascript" src="./SimBriefConfig.js"></script>
     <script defer="defer" type="text/javascript" src="./GeoMath.js"></script>
     <script defer="defer" type="text/javascript" src="./MyPanel.js"></script>
 </head>
@@ -44,17 +45,6 @@
                     <div id="flightplan-status" class="flightplan-status">Checking...</div>
                 </div>
 
-                <div class="waypoint-card">
-                    <div class="waypoint-label">Selected fix</div>
-                    <div id="next-waypoint-ident" class="waypoint-ident">--</div>
-                    <div id="next-waypoint-type" class="waypoint-type">Waypoint</div>
-                </div>
-
-                <div class="selector-group">
-                    <label for="waypoint-select" class="select-label">Next waypoint</label>
-                    <new-list-button id="waypoint-select" title="Next waypoint" class="inList" loop="false"></new-list-button>
-                </div>
-
                 <div class="manual-lookup-group">
                     <label for="manual-waypoint-input" class="select-label">SimBrief Pilot ID or username</label>
                     <div class="manual-lookup-controls">
@@ -63,22 +53,43 @@
                     </div>
                 </div>
 
-                <div class="coord-grid">
+                <div class="waypoint-card">
+                    <div class="waypoint-label">Next fix</div>
+                    <div id="next-fix-ident" class="waypoint-ident">--</div>
+                    <div id="next-fix-type" class="waypoint-type">Waypoint</div>
+                </div>
+
+                <div class="coord-grid next-fix-grid">
                     <div class="coord-item">
                         <span>Lat</span>
-                        <strong id="next-waypoint-lat">--</strong>
+                        <strong id="next-fix-lat">--</strong>
                     </div>
                     <div class="coord-item">
                         <span>Lon</span>
-                        <strong id="next-waypoint-lon">--</strong>
+                        <strong id="next-fix-lon">--</strong>
                     </div>
                     <div class="coord-item">
                         <span>Dist</span>
-                        <strong id="next-waypoint-distance">--</strong>
+                        <strong id="next-fix-distance">--</strong>
                     </div>
                     <div class="coord-item">
                         <span>Hdg</span>
-                        <strong id="next-waypoint-heading">--</strong>
+                        <strong id="next-fix-heading">--</strong>
+                    </div>
+                </div>
+
+                <div class="selector-group">
+                    <new-list-button id="waypoint-select" title="SELECT FIX #00" class="inList" loop="false"></new-list-button>
+                </div>
+
+                <div class="coord-grid select-fix-grid">
+                    <div class="coord-item">
+                        <span>Lat</span>
+                        <strong id="select-fix-lat">--</strong>
+                    </div>
+                    <div class="coord-item">
+                        <span>Lon</span>
+                        <strong id="select-fix-lon">--</strong>
                     </div>
                 </div>
 

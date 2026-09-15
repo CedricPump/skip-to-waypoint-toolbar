@@ -163,7 +163,6 @@ class MyPanel extends TemplateElement {
         this.longDistancePauseMs = 1500;
         this.longDistancePressureThresholdInHg = 0.03;
         this.longDistanceAirspeedThresholdKts = 5;
-        this.simBriefUserStorageKey = 'skipto-panel-simbrief-user';
         this.flightplanFixes = [];
         this.activeFlightplanFixIndex = 0;
         this.initialize();
@@ -188,12 +187,14 @@ class MyPanel extends TemplateElement {
             this.txtDebugLog = this.querySelector('#txt-debug-log');
             this.txtDebugLogLabel = this.querySelector('#debug-log-label');
             this.statusNode = this.querySelector('#flightplan-status');
-            this.identNode = this.querySelector('#next-waypoint-ident');
-            this.typeNode = this.querySelector('#next-waypoint-type');
-            this.latNode = this.querySelector('#next-waypoint-lat');
-            this.lonNode = this.querySelector('#next-waypoint-lon');
-            this.distanceNode = this.querySelector('#next-waypoint-distance');
-            this.headingNode = this.querySelector('#next-waypoint-heading');
+            this.identNode = this.querySelector('#next-fix-ident');
+            this.typeNode = this.querySelector('#next-fix-type');
+            this.nextLatNode = this.querySelector('#next-fix-lat');
+            this.nextLonNode = this.querySelector('#next-fix-lon');
+            this.nextDistanceNode = this.querySelector('#next-fix-distance');
+            this.nextHeadingNode = this.querySelector('#next-fix-heading');
+            this.selectLatNode = this.querySelector('#select-fix-lat');
+            this.selectLonNode = this.querySelector('#select-fix-lon');
 
             // Wire up the action buttons and dropdown to panel behavior.
             this.btnTeleport = this.querySelector('#btnTeleport');
@@ -204,9 +205,10 @@ class MyPanel extends TemplateElement {
 
             if (this.manualWaypointInput) {
                 try {
-                    this.manualWaypointInput.value = localStorage.getItem(this.simBriefUserStorageKey) || '';
+                    const config = window.SkipToWaypointConfig || {};
+                    this.manualWaypointInput.value = config.simBriefUser || '';
                 } catch (e) {
-                    this.log(`Unable to restore SimBrief user: ${e && e.message ? e.message : e}`, 'WARN');
+                    this.log(`Unable to read SimBrief config: ${e && e.message ? e.message : e}`, 'WARN');
                 }
             }
 
@@ -464,12 +466,11 @@ class MyPanel extends TemplateElement {
 
         try {
             const selected = JSON.parse(selectedValue);
-            this.identNode.textContent = selected.ident;
-            this.typeNode.textContent = String(selected.type || 'WAYPOINT').toUpperCase();
-            this.latNode.textContent = this.formatCoordinate(selected.lat);
-            this.lonNode.textContent = this.formatCoordinate(selected.lon);
-            const heading = this.getBearingFromAircraftToWaypoint(selected);
-            this.headingNode.textContent = Number.isFinite(heading) ? `${heading.toFixed(0)}°` : '--';
+            this.selectLatNode.textContent = this.formatCoordinate(selected.lat);
+            this.selectLonNode.textContent = this.formatCoordinate(selected.lon);
+                if (this.waypointSelect && Number.isInteger(selected.routeIndex)) {
+                    this.waypointSelect.title = `SELECT FIX #${String(selected.routeIndex + 1).padStart(2, '0')}`;
+                }
             this.statusNode.textContent = 'Route fix selected';
         } catch (e) {
             this.log(`Failed to parse selected waypoint: ${e}`, 'WARN');
@@ -479,16 +480,6 @@ class MyPanel extends TemplateElement {
     async onLookupClicked() {
         const text = this.manualWaypointInput ? this.manualWaypointInput.value : '';
         const trimmedText = text.trim();
-
-        try {
-            if (trimmedText) {
-                localStorage.setItem(this.simBriefUserStorageKey, trimmedText);
-            } else {
-                localStorage.removeItem(this.simBriefUserStorageKey);
-            }
-        } catch (e) {
-            this.log(`Unable to save SimBrief user: ${e && e.message ? e.message : e}`, 'WARN');
-        }
 
         const queryName = /^\d+$/.test(trimmedText) ? 'userid' : 'username';
         const url = `https://www.simbrief.com/api/xml.fetcher.php?${queryName}=${encodeURIComponent(trimmedText)}&json=1`;
@@ -503,12 +494,13 @@ class MyPanel extends TemplateElement {
             const fixes = flightplan.navlog && Array.isArray(flightplan.navlog.fix)
                 ? flightplan.navlog.fix
                 : [];
-            this.flightplanFixes = fixes.map((fix) => ({
+            this.flightplanFixes = fixes.map((fix, index) => ({
                 ident: fix && fix.ident ? fix.ident : '--',
                 type: fix && fix.type ? fix.type : 'WAYPOINT',
                 lat: Number(fix && fix.pos_lat),
                 lon: Number(fix && fix.pos_long),
-                alt: Number(fix && fix.altitude) || 0
+                alt: Number(fix && fix.altitude) || 0,
+                routeIndex: index
             })).filter((fix) => Number.isFinite(fix.lat) && Number.isFinite(fix.lon));
             this.activeFlightplanFixIndex = 0;
             this.selectInitialFlightplanFix();
@@ -536,8 +528,12 @@ class MyPanel extends TemplateElement {
                 this.statusNode.textContent = 'Waypoint data unavailable';
                 this.identNode.textContent = 'N/A';
                 this.typeNode.textContent = 'Unavailable';
-                this.latNode.textContent = '--';
-                this.lonNode.textContent = '--';
+                this.nextLatNode.textContent = '--';
+                this.nextLonNode.textContent = '--';
+                this.nextDistanceNode.textContent = '--';
+                this.nextHeadingNode.textContent = '--';
+                this.selectLatNode.textContent = '--';
+                this.selectLonNode.textContent = '--';
                 if (this.waypointSelect) {
                     this.waypointSelect.SetData({
                         daChoices: ['No waypoint data'],
@@ -546,7 +542,7 @@ class MyPanel extends TemplateElement {
                         bLoop: false,
                         bDisabled: true,
                         bHideButtons: true,
-                        sTitle: 'Next waypoint',
+                        sTitle: 'SELECT FIX #00',
                         sEmpty: ''
                     });
                 }
@@ -567,7 +563,7 @@ class MyPanel extends TemplateElement {
                     bLoop: false,
                     bDisabled: false,
                     bHideButtons: false,
-                    sTitle: 'Next waypoint',
+                    sTitle: `SELECT FIX #${String(this.activeFlightplanFixIndex + 1).padStart(2, '0')}`,
                     sEmpty: ''
                 });
             }
@@ -588,11 +584,15 @@ class MyPanel extends TemplateElement {
             this.statusNode.textContent = 'Waypoint available';
             this.identNode.textContent = selected.ident;
             this.typeNode.textContent = String(selected.type || 'WAYPOINT').toUpperCase();
-            this.latNode.textContent = this.formatCoordinate(selected.lat);
-            this.lonNode.textContent = this.formatCoordinate(selected.lon);
-            this.distanceNode.textContent = Number.isFinite(waypointDistanceNm) ? `${waypointDistanceNm.toFixed(1)} NM` : '--';
+            this.nextLatNode.textContent = this.formatCoordinate(selected.lat);
+            this.nextLonNode.textContent = this.formatCoordinate(selected.lon);
+            this.nextDistanceNode.textContent = Number.isFinite(waypointDistanceNm) ? `${waypointDistanceNm.toFixed(1)} NM` : '--';
             const heading = this.getBearingFromAircraftToWaypoint(selected);
-            this.headingNode.textContent = Number.isFinite(heading) ? `${heading.toFixed(0)}°` : '--';
+            this.nextHeadingNode.textContent = Number.isFinite(heading) ? `${heading.toFixed(0)}°` : '--';
+            if (this.selectLatNode && this.selectLonNode) {
+                this.selectLatNode.textContent = this.formatCoordinate(selected.lat);
+                this.selectLonNode.textContent = this.formatCoordinate(selected.lon);
+            }
 
             this.log(`Waypoint ready: ${selected.ident}. Distance to waypoint: ${Number.isFinite(waypointDistanceNm) ? waypointDistanceNm.toFixed(1) : '--'} NM.`);
         } catch (e) {
