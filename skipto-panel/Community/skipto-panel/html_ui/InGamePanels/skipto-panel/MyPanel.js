@@ -207,7 +207,8 @@ class MyPanel extends TemplateElement {
             this.refreshIntervalMs = 2000;
             this.refreshTimer = null;
             this.started = true;
-            this.startAutoRefresh();
+            // Disabled for now; manual Refresh remains available.
+            // this.startAutoRefresh();
             this.refreshWaypointState();
         } catch (e) {
             this.log(`Error in initialize: ${e}`, 'ERROR');
