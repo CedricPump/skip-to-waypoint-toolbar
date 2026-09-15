@@ -142,12 +142,40 @@
         return normalizeDegrees(toDegrees(bearing));
     }
 
+    function geodesicDestinationCoordinates(lat, lon, bearingDegrees, distanceNm) {
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)
+            || !Number.isFinite(bearingDegrees) || !Number.isFinite(distanceNm)) {
+            return { lat: Number.NaN, lon: Number.NaN };
+        }
+
+        const earthRadiusNm = 3440.065;
+        const angularDistance = distanceNm / earthRadiusNm;
+        const φ1 = toRadians(lat);
+        const λ1 = toRadians(lon);
+        const θ = toRadians(bearingDegrees);
+        const sinφ1 = Math.sin(φ1);
+        const cosφ1 = Math.cos(φ1);
+        const sinAngularDistance = Math.sin(angularDistance);
+        const cosAngularDistance = Math.cos(angularDistance);
+        const sinφ2 = sinφ1 * cosAngularDistance + cosφ1 * sinAngularDistance * Math.cos(θ);
+        const φ2 = Math.asin(sinφ2);
+        const y = Math.sin(θ) * sinAngularDistance * cosφ1;
+        const x = cosAngularDistance - sinφ1 * Math.sin(φ2);
+        const λ2 = λ1 + Math.atan2(y, x);
+
+        return {
+            lat: toDegrees(φ2),
+            lon: normalizeDegrees(toDegrees(λ2) + 180) - 180
+        };
+    }
+
     const geoMath = {
         toRadians,
         toDegrees,
         normalizeDegrees,
         geodesicDistanceNm,
         geodesicBearingDegrees,
+        geodesicDestinationCoordinates,
         haversineDistanceNm
     };
 

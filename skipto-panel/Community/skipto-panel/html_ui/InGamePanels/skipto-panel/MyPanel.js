@@ -144,12 +144,40 @@
         return normalizeDegrees(toDegrees(bearing));
     }
 
+    function geodesicDestinationCoordinates(lat, lon, bearingDegrees, distanceNm) {
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)
+            || !Number.isFinite(bearingDegrees) || !Number.isFinite(distanceNm)) {
+            return { lat: Number.NaN, lon: Number.NaN };
+        }
+
+        var earthRadiusNm = 3440.065;
+        var angularDistance = distanceNm / earthRadiusNm;
+        var φ1 = toRadians(lat);
+        var λ1 = toRadians(lon);
+        var θ = toRadians(bearingDegrees);
+        var sinφ1 = Math.sin(φ1);
+        var cosφ1 = Math.cos(φ1);
+        var sinAngularDistance = Math.sin(angularDistance);
+        var cosAngularDistance = Math.cos(angularDistance);
+        var sinφ2 = sinφ1 * cosAngularDistance + cosφ1 * sinAngularDistance * Math.cos(θ);
+        var φ2 = Math.asin(sinφ2);
+        var y = Math.sin(θ) * sinAngularDistance * cosφ1;
+        var x = cosAngularDistance - sinφ1 * Math.sin(φ2);
+        var λ2 = λ1 + Math.atan2(y, x);
+
+        return {
+            lat: toDegrees(φ2),
+            lon: normalizeDegrees(toDegrees(λ2) + 180) - 180
+        };
+    }
+
     root.GeoMath = {
         toRadians: toRadians,
         toDegrees: toDegrees,
         normalizeDegrees: normalizeDegrees,
         geodesicDistanceNm: geodesicDistanceNm,
         geodesicBearingDegrees: geodesicBearingDegrees,
+        geodesicDestinationCoordinates: geodesicDestinationCoordinates,
         haversineDistanceNm: haversineDistanceNm
     };
 })(typeof window !== 'undefined' ? window : (typeof self !== 'undefined' ? self : (typeof global !== 'undefined' ? global : {})));
@@ -203,6 +231,8 @@ class MyPanel extends TemplateElement {
             this.manualWaypointInput = this.querySelector('#manual-waypoint-input');
             this.btnLookup = this.querySelector('#btnLookup');
             this.setFuelOnTeleport = this.querySelector('#set-fuel-on-teleport');
+            this.teleportBeforeFix = this.querySelector('#teleport-before-fix');
+            this.autoUpdate = this.querySelector('#auto-update');
 
             if (this.manualWaypointInput) {
                 try {
@@ -217,11 +247,11 @@ class MyPanel extends TemplateElement {
             if (this.btnRefresh) this.btnRefresh.addEventListener('click', () => this.refreshWaypointState());
             if (this.waypointSelect) this.waypointSelect.addEventListener('OnValidate', () => this.onWaypointSelected());
             if (this.btnLookup) this.btnLookup.addEventListener('click', () => this.onLookupClicked());
+            if (this.autoUpdate) this.autoUpdate.addEventListener('change', () => this.onAutoUpdateChanged());
 
             this.refreshIntervalMs = 60000;
             this.refreshTimer = null;
             this.started = true;
-            this.startAutoRefresh();
             this.refreshWaypointState();
         } catch (e) {
             this.log(`Error in initialize: ${e}`, 'ERROR');
@@ -243,6 +273,16 @@ class MyPanel extends TemplateElement {
         if (this.refreshTimer) {
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
+        }
+    }
+
+    onAutoUpdateChanged() {
+        if (this.autoUpdate && this.autoUpdate.checked) {
+            this.startAutoRefresh();
+            this.log('Auto-update enabled: refreshing every 60 seconds.', 'INFO');
+        } else {
+            this.stopAutoRefresh();
+            this.log('Auto-update disabled.', 'INFO');
         }
     }
 
@@ -342,7 +382,7 @@ class MyPanel extends TemplateElement {
             this.log(`GeoMath keys: ${Object.keys(geoMath).join(', ')}`, 'DEBUG');
         }
 
-        if (!geoMath || typeof geoMath.geodesicBearingDegrees !== 'function' || typeof geoMath.geodesicDistanceNm !== 'function' || typeof geoMath.toRadians !== 'function') {
+        if (!geoMath || typeof geoMath.geodesicBearingDegrees !== 'function' || typeof geoMath.geodesicDistanceNm !== 'function' || typeof geoMath.geodesicDestinationCoordinates !== 'function' || typeof geoMath.toRadians !== 'function') {
             this.log('GeoMath is not available; coordinate math cannot run.', 'ERROR');
             return null;
         }
@@ -353,6 +393,12 @@ class MyPanel extends TemplateElement {
         const geoMath = this.getGeoMath();
         if (!geoMath) return Number.NaN;
         return geoMath.geodesicBearingDegrees(startLat, startLon, endLat, endLon);
+    }
+
+    calculateDestinationCoordinates(lat, lon, bearingDegrees, distanceNm) {
+        const geoMath = this.getGeoMath();
+        if (!geoMath) return { lat: Number.NaN, lon: Number.NaN };
+        return geoMath.geodesicDestinationCoordinates(lat, lon, bearingDegrees, distanceNm);
     }
 
     toRadians(value) {
@@ -629,7 +675,36 @@ class MyPanel extends TemplateElement {
             const initialLat = this.getSimVar('PLANE LATITUDE', 'degrees', lat);
             const initialLon = this.getSimVar('PLANE LONGITUDE', 'degrees', lon);
             const altitudeTarget = this.getSimVar('PLANE ALTITUDE', 'feet', 0);
-            const distanceNm = this.getDistanceFromAircraftNm(initialLat, initialLon, lat, lon);
+            const approachBearing = this.calculateBearingDegrees(initialLat, initialLon, lat, lon);
+            let teleportLat = lat;
+            let teleportLon = lon;
+
+            if (this.teleportBeforeFix && this.teleportBeforeFix.checked) {
+                const groundSpeedKts = this.getSimVar(
+                    'GROUND VELOCITY',
+                    'knots',
+                    this.getSimVar('GPS GROUND SPEED', 'knots', Number.NaN)
+                );
+                const leadDistanceNm = Number.isFinite(groundSpeedKts)
+                    ? Math.max(0, groundSpeedKts) * 15 / 3600
+                    : Number.NaN;
+                const leadPosition = this.calculateDestinationCoordinates(
+                    lat,
+                    lon,
+                    approachBearing + 180,
+                    leadDistanceNm
+                );
+
+                if (Number.isFinite(leadPosition.lat) && Number.isFinite(leadPosition.lon)) {
+                    teleportLat = leadPosition.lat;
+                    teleportLon = leadPosition.lon;
+                    this.log(`Experimental lead teleport: ${groundSpeedKts.toFixed(1)} kt, ${leadDistanceNm.toFixed(2)} NM before ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)}.`, 'WARN');
+                } else {
+                    this.log(`Experimental lead teleport skipped: ground speed unavailable for ${ident}.`, 'WARN');
+                }
+            }
+
+            const distanceNm = this.getDistanceFromAircraftNm(initialLat, initialLon, teleportLat, teleportLon);
             const longDistanceTeleport = Number.isFinite(distanceNm) && distanceNm > this.longDistanceThresholdNm;
             const ambientPressureBefore = this.getSimVar('AMBIENT PRESSURE', 'inHG', Number.NaN);
             const indicatedAirspeedBefore = this.getSimVar('AIRSPEED INDICATED', 'knots', Number.NaN);
@@ -642,12 +717,12 @@ class MyPanel extends TemplateElement {
             }
 
             // Apply the waypoint location while preserving the aircraft's current altitude.
-            SimVar.SetSimVarValue('PLANE LATITUDE', 'degrees', lat);
-            SimVar.SetSimVarValue('PLANE LONGITUDE', 'degrees', lon);
+            SimVar.SetSimVarValue('PLANE LATITUDE', 'degrees', teleportLat);
+            SimVar.SetSimVarValue('PLANE LONGITUDE', 'degrees', teleportLon);
             SimVar.SetSimVarValue('PLANE ALTITUDE', 'feet', altitudeTarget);
 
             // Turn the aircraft to the new waypoint heading so it is aligned immediately after the jump.
-            const heading = this.calculateBearingDegrees(initialLat, initialLon, lat, lon);
+            const heading = approachBearing;
             SimVar.SetSimVarValue('PLANE HEADING DEGREES TRUE', 'degrees', heading);
 
             if (this.setFuelOnTeleport && this.setFuelOnTeleport.checked) {
@@ -691,7 +766,7 @@ class MyPanel extends TemplateElement {
             }
 
             this.statusNode.textContent = 'Teleported';
-            this.log(`Teleported aircraft to ${ident} at ${this.formatCoordinate(lat)}, ${this.formatCoordinate(lon)} while preserving current altitude ${this.formatAltitude(altitudeTarget)} and facing ${this.formatCoordinate(heading)}° true.`, 'INFO');
+            this.log(`Teleported aircraft to ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)} while preserving current altitude ${this.formatAltitude(altitudeTarget)} and facing ${this.formatCoordinate(heading)}° true.`, 'INFO');
         } catch (e) {
             this.log(`Teleport failed: ${e}`, 'ERROR');
         }

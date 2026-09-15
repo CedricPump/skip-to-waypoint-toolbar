@@ -28,6 +28,8 @@ The current implementation includes:
 - coordinates for the selected teleport fix
 - a teleport action to the selected flight-plan fix
 - an opt-in experimental fuel setting using SimBrief's planned onboard fuel at the selected fix
+- an opt-in experimental 15-second lead teleport before the selected fix
+- optional 60-second automatic route reconciliation, with manual Refresh always available
 - altitude preservation on teleport
 - heading adjustment toward the selected waypoint
 - a default MSFS-style panel appearance using the native panel/template approach instead of custom color overrides
@@ -57,6 +59,8 @@ These are the planned improvements for later iterations of the project.
 - investigate whether SimBrief estimated fuel values are available for each navlog fix
 
 The experimental `Set fuel on teleport` option currently applies the selected fix's SimBrief `fuel_plan_onboard` estimate. SimBrief reports this value in kilograms; the panel converts it to pounds and writes it through `FUEL TOTAL QUANTITY WEIGHT`. Fuel tank distribution and aircraft-specific behavior still need to be tested, so the option is disabled by default and should be treated as experimental.
+
+The experimental `Teleport 15 seconds before fix` option uses the aircraft's current ground speed to calculate a lead distance, then places the aircraft that distance before the target fix along the current aircraft-to-fix bearing. Direct-to-fix teleport remains the default. If ground speed is unavailable, the panel falls back to direct-to-fix behavior.
 
 ### Flight realism and simulation quality
 - optionally calculate and apply fuel changes on teleport
