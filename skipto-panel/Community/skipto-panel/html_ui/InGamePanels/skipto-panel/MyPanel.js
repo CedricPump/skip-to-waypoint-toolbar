@@ -196,10 +196,13 @@ class MyPanel extends TemplateElement {
             this.btnTeleport = this.querySelector('#btnTeleport');
             this.btnRefresh = this.querySelector('#btnRefresh');
             this.waypointSelect = this.querySelector('#waypoint-select');
+            this.manualWaypointInput = this.querySelector('#manual-waypoint-input');
+            this.btnLookup = this.querySelector('#btnLookup');
 
             if (this.btnTeleport) this.btnTeleport.addEventListener('click', () => this.onTeleportClicked());
             if (this.btnRefresh) this.btnRefresh.addEventListener('click', () => this.refreshWaypointState());
             if (this.waypointSelect) this.waypointSelect.addEventListener('change', () => this.onWaypointSelected());
+            if (this.btnLookup) this.btnLookup.addEventListener('click', () => this.onLookupClicked());
 
             this.refreshIntervalMs = 2000;
             this.refreshTimer = null;
@@ -400,6 +403,11 @@ class MyPanel extends TemplateElement {
         } catch (e) {
             this.log(`Failed to parse selected waypoint: ${e}`, 'WARN');
         }
+    }
+
+    onLookupClicked() {
+        const text = this.manualWaypointInput ? this.manualWaypointInput.value : '';
+        this.log(`Lookup button pressed with text: "${text}"`, 'INFO');
     }
 
     refreshWaypointState() {

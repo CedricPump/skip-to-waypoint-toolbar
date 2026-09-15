@@ -100,6 +100,27 @@ html, body, #my-panel, ingame-ui, #MainDisplay {
     font-weight: 600;
 }
 
+.manual-lookup-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.2rem 0;
+}
+
+.manual-lookup-controls {
+    display: flex;
+    gap: 0.35rem;
+}
+
+#manual-waypoint-input {
+    min-width: 0;
+    flex: 1 1 auto;
+    min-height: 2rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    font-size: 1rem;
+}
+
 .coord-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
