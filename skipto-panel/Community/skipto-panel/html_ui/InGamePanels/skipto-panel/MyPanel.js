@@ -202,6 +202,7 @@ class MyPanel extends TemplateElement {
             this.waypointSelect = this.querySelector('#waypoint-select');
             this.manualWaypointInput = this.querySelector('#manual-waypoint-input');
             this.btnLookup = this.querySelector('#btnLookup');
+            this.setFuelOnTeleport = this.querySelector('#set-fuel-on-teleport');
 
             if (this.manualWaypointInput) {
                 try {
@@ -500,6 +501,7 @@ class MyPanel extends TemplateElement {
                 lat: Number(fix && fix.pos_lat),
                 lon: Number(fix && fix.pos_long),
                 alt: Number(fix && fix.altitude) || 0,
+                fuelPlanOnboardKg: Number(fix && fix.fuel_plan_onboard),
                 routeIndex: index
             })).filter((fix) => Number.isFinite(fix.lat) && Number.isFinite(fix.lon));
             this.activeFlightplanFixIndex = 0;
@@ -647,6 +649,21 @@ class MyPanel extends TemplateElement {
             // Turn the aircraft to the new waypoint heading so it is aligned immediately after the jump.
             const heading = this.calculateBearingDegrees(initialLat, initialLon, lat, lon);
             SimVar.SetSimVarValue('PLANE HEADING DEGREES TRUE', 'degrees', heading);
+
+            if (this.setFuelOnTeleport && this.setFuelOnTeleport.checked) {
+                const fuelPlanOnboardKg = Number(target.fuelPlanOnboardKg);
+                if (Number.isFinite(fuelPlanOnboardKg) && fuelPlanOnboardKg >= 0) {
+                    const fuelPlanOnboardLb = fuelPlanOnboardKg * 2.2046226218;
+                    try {
+                        SimVar.SetSimVarValue('FUEL TOTAL QUANTITY WEIGHT', 'pounds', fuelPlanOnboardLb);
+                        this.log(`Experimental fuel set: ${fuelPlanOnboardKg.toFixed(1)} kg (${fuelPlanOnboardLb.toFixed(1)} lb) at ${ident}.`, 'WARN');
+                    } catch (e) {
+                        this.log(`Experimental fuel write failed at ${ident}: ${e && e.message ? e.message : e}`, 'ERROR');
+                    }
+                } else {
+                    this.log(`Experimental fuel skipped: no valid SimBrief fuel estimate for ${ident}.`, 'WARN');
+                }
+            }
 
             if (longDistanceTeleport) {
                 await this.wait(250);

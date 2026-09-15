@@ -27,6 +27,7 @@ The current implementation includes:
 - an MSFS-compatible `NewListButton` for selecting upcoming fixes
 - coordinates for the selected teleport fix
 - a teleport action to the selected flight-plan fix
+- an opt-in experimental fuel setting using SimBrief's planned onboard fuel at the selected fix
 - altitude preservation on teleport
 - heading adjustment toward the selected waypoint
 - a default MSFS-style panel appearance using the native panel/template approach instead of custom color overrides
@@ -54,6 +55,8 @@ These are the planned improvements for later iterations of the project.
 - account for realistic turn geometry and approach behavior at cruise speed
 - calculate fuel consumption on teleport
 - investigate whether SimBrief estimated fuel values are available for each navlog fix
+
+The experimental `Set fuel on teleport` option currently applies the selected fix's SimBrief `fuel_plan_onboard` estimate. SimBrief reports this value in kilograms; the panel converts it to pounds and writes it through `FUEL TOTAL QUANTITY WEIGHT`. Fuel tank distribution and aircraft-specific behavior still need to be tested, so the option is disabled by default and should be treated as experimental.
 
 ### Flight realism and simulation quality
 - optionally calculate and apply fuel changes on teleport
