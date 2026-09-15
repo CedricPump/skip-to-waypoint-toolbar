@@ -164,6 +164,8 @@ class MyPanel extends TemplateElement {
         this.longDistancePressureThresholdInHg = 0.03;
         this.longDistanceAirspeedThresholdKts = 5;
         this.simBriefUserStorageKey = 'skipto-panel-simbrief-user';
+        this.flightplanFixes = [];
+        this.activeFlightplanFixIndex = 0;
         this.initialize();
     }
 
@@ -213,11 +215,10 @@ class MyPanel extends TemplateElement {
             if (this.waypointSelect) this.waypointSelect.addEventListener('change', () => this.onWaypointSelected());
             if (this.btnLookup) this.btnLookup.addEventListener('click', () => this.onLookupClicked());
 
-            this.refreshIntervalMs = 2000;
+            this.refreshIntervalMs = 60000;
             this.refreshTimer = null;
             this.started = true;
-            // Disabled for now; manual Refresh remains available.
-            // this.startAutoRefresh();
+            this.startAutoRefresh();
             this.refreshWaypointState();
         } catch (e) {
             this.log(`Error in initialize: ${e}`, 'ERROR');
@@ -383,19 +384,77 @@ class MyPanel extends TemplateElement {
         }
     }
 
-    getWaypointEntries() {
-        // Use the active GPS next waypoint as the panel target when it is available.
-        const id = this.getSingleStringVar('GPS WP NEXT ID', '');
-        this.log(`Next waypoint ID: ${id}`, 'DEBUG');
-        if (!id || id === '--') return [];
+    getBearingFromAircraftToWaypoint(waypoint) {
+        const currentLat = this.getSimVar('PLANE LATITUDE', 'degrees', Number.NaN);
+        const currentLon = this.getSimVar('PLANE LONGITUDE', 'degrees', Number.NaN);
+        if (!Number.isFinite(currentLat) || !Number.isFinite(currentLon)) return Number.NaN;
+        return this.calculateBearingDegrees(currentLat, currentLon, Number(waypoint.lat), Number(waypoint.lon));
+    }
 
-        return [{
-            ident: id,
-            type: 'WAYPOINT',
-            lat: this.getSingleSimVar('GPS WP NEXT LAT', 'degrees', 0),
-            lon: this.getSingleSimVar('GPS WP NEXT LON', 'degrees', 0),
-            alt: this.getSingleSimVar('GPS WP NEXT ALT', 'feet', 0)
-        }];
+    getHeadingDifferenceDegrees(firstHeading, secondHeading) {
+        const difference = Math.abs(firstHeading - secondHeading) % 360;
+        return difference > 180 ? 360 - difference : difference;
+    }
+
+    selectInitialFlightplanFix() {
+        if (!this.flightplanFixes.length) return;
+
+        const currentLat = this.getSimVar('PLANE LATITUDE', 'degrees', Number.NaN);
+        const currentLon = this.getSimVar('PLANE LONGITUDE', 'degrees', Number.NaN);
+        const currentHeading = this.getSimVar('PLANE HEADING DEGREES TRUE', 'degrees', Number.NaN);
+        if (!Number.isFinite(currentLat) || !Number.isFinite(currentLon) || !Number.isFinite(currentHeading)) {
+            this.activeFlightplanFixIndex = 0;
+            return;
+        }
+
+        let closestForwardIndex = 0;
+        let closestForwardDistance = Number.POSITIVE_INFINITY;
+        this.flightplanFixes.forEach((fix, index) => {
+            const distance = this.getDistanceFromAircraftNm(currentLat, currentLon, fix.lat, fix.lon);
+            const bearing = this.calculateBearingDegrees(currentLat, currentLon, fix.lat, fix.lon);
+            const headingDifference = this.getHeadingDifferenceDegrees(currentHeading, bearing);
+            if (Number.isFinite(distance) && Number.isFinite(bearing) && headingDifference <= 90 && distance < closestForwardDistance) {
+                closestForwardIndex = index;
+                closestForwardDistance = distance;
+            }
+        });
+
+        this.activeFlightplanFixIndex = closestForwardDistance < Number.POSITIVE_INFINITY ? closestForwardIndex : 0;
+        this.log(`Initial active flightplan fix: ${this.flightplanFixes[this.activeFlightplanFixIndex].ident}`, 'INFO');
+    }
+
+    reconcileActiveFlightplanFix() {
+        if (!this.flightplanFixes.length) return;
+
+        const currentLat = this.getSimVar('PLANE LATITUDE', 'degrees', Number.NaN);
+        const currentLon = this.getSimVar('PLANE LONGITUDE', 'degrees', Number.NaN);
+        const currentHeading = this.getSimVar('PLANE HEADING DEGREES TRUE', 'degrees', Number.NaN);
+        if (!Number.isFinite(currentLat) || !Number.isFinite(currentLon) || !Number.isFinite(currentHeading)) return;
+
+        const activeFix = this.flightplanFixes[this.activeFlightplanFixIndex];
+        const activeBearing = this.calculateBearingDegrees(currentLat, currentLon, activeFix.lat, activeFix.lon);
+        if (Number.isFinite(activeBearing) && this.getHeadingDifferenceDegrees(currentHeading, activeBearing) <= 90) return;
+
+        const maxFixesToCheck = 5;
+        const lastIndexToCheck = Math.min(this.activeFlightplanFixIndex + maxFixesToCheck, this.flightplanFixes.length - 1);
+        for (let index = this.activeFlightplanFixIndex + 1; index <= lastIndexToCheck; index += 1) {
+            const fix = this.flightplanFixes[index];
+            const bearing = this.calculateBearingDegrees(currentLat, currentLon, fix.lat, fix.lon);
+            if (Number.isFinite(bearing) && this.getHeadingDifferenceDegrees(currentHeading, bearing) <= 90) {
+                this.activeFlightplanFixIndex = index;
+                this.log(`Reconciled active flightplan fix: ${fix.ident}`, 'INFO');
+                return;
+            }
+        }
+    }
+
+    getWaypointEntries() {
+        if (this.flightplanFixes.length) {
+            this.reconcileActiveFlightplanFix();
+            return [this.flightplanFixes[this.activeFlightplanFixIndex]];
+        }
+
+        return [];
     }
 
     onWaypointSelected() {
@@ -409,6 +468,8 @@ class MyPanel extends TemplateElement {
             this.typeNode.textContent = String(selected.type || 'WAYPOINT').toUpperCase();
             this.latNode.textContent = this.formatCoordinate(selected.lat);
             this.lonNode.textContent = this.formatCoordinate(selected.lon);
+            const heading = this.getBearingFromAircraftToWaypoint(selected);
+            this.headingNode.textContent = Number.isFinite(heading) ? `${heading.toFixed(0)}°` : '--';
             this.statusNode.textContent = 'Route fix selected';
         } catch (e) {
             this.log(`Failed to parse selected waypoint: ${e}`, 'WARN');
@@ -442,6 +503,16 @@ class MyPanel extends TemplateElement {
             const fixes = flightplan.navlog && Array.isArray(flightplan.navlog.fix)
                 ? flightplan.navlog.fix
                 : [];
+            this.flightplanFixes = fixes.map((fix) => ({
+                ident: fix && fix.ident ? fix.ident : '--',
+                type: fix && fix.type ? fix.type : 'WAYPOINT',
+                lat: Number(fix && fix.pos_lat),
+                lon: Number(fix && fix.pos_long),
+                alt: Number(fix && fix.altitude) || 0
+            })).filter((fix) => Number.isFinite(fix.lat) && Number.isFinite(fix.lon));
+            this.activeFlightplanFixIndex = 0;
+            this.selectInitialFlightplanFix();
+
             fixes.forEach((fix, index) => {
                 const ident = fix && fix.ident ? fix.ident : '--';
                 const latitude = fix && fix.pos_lat !== undefined ? fix.pos_lat : '--';
@@ -479,10 +550,15 @@ class MyPanel extends TemplateElement {
 
             if (this.waypointSelect) {
                 this.waypointSelect.innerHTML = '';
-                const option = document.createElement('option');
-                option.value = JSON.stringify(selected);
-                option.textContent = `${selected.ident} (${String(selected.type || 'WAYPOINT').toUpperCase()})`;
-                this.waypointSelect.appendChild(option);
+                const upcomingFixes = this.flightplanFixes.length
+                    ? this.flightplanFixes.slice(this.activeFlightplanFixIndex)
+                    : [selected];
+                upcomingFixes.forEach((fix) => {
+                    const option = document.createElement('option');
+                    option.value = JSON.stringify(fix);
+                    option.textContent = `${fix.ident} (${String(fix.type || 'WAYPOINT').toUpperCase()})`;
+                    this.waypointSelect.appendChild(option);
+                });
                 this.waypointSelect.selectedIndex = 0;
             }
 
@@ -505,6 +581,8 @@ class MyPanel extends TemplateElement {
             this.latNode.textContent = this.formatCoordinate(selected.lat);
             this.lonNode.textContent = this.formatCoordinate(selected.lon);
             this.distanceNode.textContent = Number.isFinite(waypointDistanceNm) ? `${waypointDistanceNm.toFixed(1)} NM` : '--';
+            const heading = this.getBearingFromAircraftToWaypoint(selected);
+            this.headingNode.textContent = Number.isFinite(heading) ? `${heading.toFixed(0)}°` : '--';
 
             this.log(`Waypoint ready: ${selected.ident}. Distance to waypoint: ${Number.isFinite(waypointDistanceNm) ? waypointDistanceNm.toFixed(1) : '--'} NM.`);
         } catch (e) {
