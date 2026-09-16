@@ -169,17 +169,10 @@ html, body, #my-panel, ingame-ui, #MainDisplay {
     filter: brightness(1.06);
 }
 
-.fuel-option {
+.checkbox-options {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    min-height: 1.8rem;
-    font-size: 0.75rem;
-}
 
-.fuel-option input {
-    width: 1rem;
-    height: 1rem;
 }
 
 .debug-group {

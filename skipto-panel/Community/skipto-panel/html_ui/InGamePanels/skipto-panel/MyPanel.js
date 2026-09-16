@@ -1,3 +1,5 @@
+
+
 (function (root) {
     'use strict';
 
@@ -248,8 +250,10 @@ class MyPanel extends TemplateElement {
             if (this.waypointSelect) this.waypointSelect.addEventListener('OnValidate', () => this.onWaypointSelected());
             if (this.btnLookup) this.btnLookup.addEventListener('click', () => this.onLookupClicked());
             if (this.autoUpdate) this.autoUpdate.addEventListener('change', () => this.onAutoUpdateChanged());
+            if (this.teleportBeforeFix) this.teleportBeforeFix.addEventListener('change', () => this.onTeleportBeforeFixChanged());
+            if (this.setFuelOnTeleport) this.setFuelOnTeleport.addEventListener('change', () => this.onSetFuelOnTeleportChanged());
 
-            this.refreshIntervalMs = 60000;
+            this.refreshIntervalMs = 10000;
             this.refreshTimer = null;
             this.started = true;
             this.refreshWaypointState();
@@ -284,6 +288,14 @@ class MyPanel extends TemplateElement {
             this.stopAutoRefresh();
             this.log('Auto-update disabled.', 'INFO');
         }
+    }
+
+    onTeleportBeforeFixChanged() {
+        this.log(`Teleport before fix: ${this.teleportBeforeFix.checked}.`, 'DEBUG');
+    }
+
+    onSetFuelOnTeleportChanged() {
+        this.log(`Set fuel on teleport: ${this.setFuelOnTeleport.checked}.`, 'DEBUG');
     }
 
     log(msg = '', level = 'DEBUG') {
@@ -336,7 +348,7 @@ class MyPanel extends TemplateElement {
             this.log(`${name} (${unit}) returned empty value`, 'DEBUG');
             return fallback;
         } catch (e) {
-            this.log(`${name} (${unit}) failed: ${e && e.message ? e.message : e}`, 'DEBUG');
+            this.log(`${name} (${unit}) failed: ${e && e.message ? e.message : e}`, 'ERROR');
             return fallback;
         }
     }
@@ -352,7 +364,7 @@ class MyPanel extends TemplateElement {
             this.log(`${name} returned an empty string`, 'DEBUG');
             return fallback;
         } catch (e) {
-            this.log(`${name} failed: ${e && e.message ? e.message : e}`, 'DEBUG');
+            this.log(`${name} failed: ${e && e.message ? e.message : e}`, 'ERROR');
             return fallback;
         }
     }
@@ -373,14 +385,7 @@ class MyPanel extends TemplateElement {
             || (typeof global !== 'undefined' && global)
             || {};
 
-        this.log(`GeoMath lookup root: ${root && root.constructor ? root.constructor.name : typeof root}`, 'DEBUG');
-
         var geoMath = root && root.GeoMath;
-        this.log(`GeoMath object present: ${!!geoMath}`, 'DEBUG');
-
-        if (geoMath) {
-            this.log(`GeoMath keys: ${Object.keys(geoMath).join(', ')}`, 'DEBUG');
-        }
 
         if (!geoMath || typeof geoMath.geodesicBearingDegrees !== 'function' || typeof geoMath.geodesicDistanceNm !== 'function' || typeof geoMath.geodesicDestinationCoordinates !== 'function' || typeof geoMath.toRadians !== 'function') {
             this.log('GeoMath is not available; coordinate math cannot run.', 'ERROR');
@@ -417,7 +422,7 @@ class MyPanel extends TemplateElement {
             SimVar.SetSimVarValue(command, 'number', 1);
             this.log(`Simulation ${paused ? 'paused' : 'resumed'} for long-distance teleport.`, 'DEBUG');
         } catch (e) {
-            this.log(`Unable to ${paused ? 'pause' : 'resume'} the sim: ${e}`, 'WARN');
+            this.log(`Unable to ${paused ? 'pause' : 'resume'} the sim: ${e}`, 'ERROR');
         }
     }
 
@@ -428,7 +433,7 @@ class MyPanel extends TemplateElement {
             const value = geoMath.geodesicDistanceNm(latA, lonA, latB, lonB);
             return Number.isFinite(value) ? value : Number.NaN;
         } catch (e) {
-            this.log(`Distance calculation failed: ${e && e.message ? e.message : e}`, 'WARN');
+            this.log(`Distance calculation failed: ${e && e.message ? e.message : e}`, 'ERROR');
             return Number.NaN;
         }
     }
@@ -553,12 +558,14 @@ class MyPanel extends TemplateElement {
             this.activeFlightplanFixIndex = 0;
             this.selectInitialFlightplanFix();
 
-            fixes.forEach((fix, index) => {
-                const ident = fix && fix.ident ? fix.ident : '--';
-                const latitude = fix && fix.pos_lat !== undefined ? fix.pos_lat : '--';
-                const longitude = fix && fix.pos_long !== undefined ? fix.pos_long : '--';
-                this.log(`Waypoint ${index + 1}: ${ident} (${latitude}, ${longitude})`, 'INFO');
-            });
+            if(this.debugEnabled) {
+                fixes.forEach((fix, index) => {
+                    const ident = fix && fix.ident ? fix.ident : '--';
+                    const latitude = fix && fix.pos_lat !== undefined ? fix.pos_lat : '--';
+                    const longitude = fix && fix.pos_long !== undefined ? fix.pos_long : '--';
+                    this.log(`Waypoint ${index + 1}: ${ident} (${latitude}, ${longitude})`, 'DEBUG');
+                });
+            }
         } catch (e) {
             this.log(`Flightplan request failed: ${e && e.message ? e.message : e}`, 'ERROR');
         }
@@ -566,10 +573,6 @@ class MyPanel extends TemplateElement {
 
     refreshWaypointState() {
         try {
-            // Refresh the current route target and update all status labels in the panel.
-            this.log('Refreshing waypoint state... ', 'DEBUG');
-            var geoMath = this.getGeoMath();
-            this.log(`GeoMath available during refresh: ${!!geoMath}`, 'DEBUG');
             const entries = this.getWaypointEntries();
 
             if (entries.length === 0) {
@@ -680,6 +683,7 @@ class MyPanel extends TemplateElement {
             let teleportLon = lon;
 
             if (this.teleportBeforeFix && this.teleportBeforeFix.checked) {
+                this.log(`Experimental lead teleport: ${this.teleportBeforeFix.checked}`, 'DEBUG');
                 const groundSpeedKts = this.getSimVar(
                     'GROUND VELOCITY',
                     'knots',
@@ -698,7 +702,7 @@ class MyPanel extends TemplateElement {
                 if (Number.isFinite(leadPosition.lat) && Number.isFinite(leadPosition.lon)) {
                     teleportLat = leadPosition.lat;
                     teleportLon = leadPosition.lon;
-                    this.log(`Experimental lead teleport: ${groundSpeedKts.toFixed(1)} kt, ${leadDistanceNm.toFixed(2)} NM before ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)}.`, 'WARN');
+                    this.log(`Experimental lead teleport: ${groundSpeedKts.toFixed(1)} kt, ${leadDistanceNm.toFixed(2)} NM before ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)}.`, 'INFO');
                 } else {
                     this.log(`Experimental lead teleport skipped: ground speed unavailable for ${ident}.`, 'WARN');
                 }
@@ -726,12 +730,13 @@ class MyPanel extends TemplateElement {
             SimVar.SetSimVarValue('PLANE HEADING DEGREES TRUE', 'degrees', heading);
 
             if (this.setFuelOnTeleport && this.setFuelOnTeleport.checked) {
+                this.log(`Experimental fuel set: ${this.setFuelOnTeleport.checked}.`, 'DEBUG');
                 const fuelPlanOnboardKg = Number(target.fuelPlanOnboardKg);
                 if (Number.isFinite(fuelPlanOnboardKg) && fuelPlanOnboardKg >= 0) {
                     const fuelPlanOnboardLb = fuelPlanOnboardKg * 2.2046226218;
                     try {
                         SimVar.SetSimVarValue('FUEL TOTAL QUANTITY WEIGHT', 'pounds', fuelPlanOnboardLb);
-                        this.log(`Experimental fuel set: ${fuelPlanOnboardKg.toFixed(1)} kg (${fuelPlanOnboardLb.toFixed(1)} lb) at ${ident}.`, 'WARN');
+                        this.log(`Experimental fuel set: ${fuelPlanOnboardKg.toFixed(1)} kg (${fuelPlanOnboardLb.toFixed(1)} lb) at ${ident}.`, 'INFO');
                     } catch (e) {
                         this.log(`Experimental fuel write failed at ${ident}: ${e && e.message ? e.message : e}`, 'ERROR');
                     }
