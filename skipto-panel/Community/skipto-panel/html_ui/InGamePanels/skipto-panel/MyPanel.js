@@ -193,6 +193,12 @@ class MyPanel extends TemplateElement {
         this.longDistancePauseMs = 1500;
         this.longDistancePressureThresholdInHg = 0.03;
         this.longDistanceAirspeedThresholdKts = 5;
+        this.fuelTankSnapshot = null;
+        this.fuelRetryTimer = null;
+        this.fuelRetryDelayMs = 3000;
+        this.fuelRetryMaxAttempts = 5;
+        this.fuelTankMinReserveGallons = 30;
+        this.fuelTankMinReservePercent = 0.15;
         this.flightplanFixes = [];
         this.activeFlightplanFixIndex = 0;
         this.initialize();
@@ -205,6 +211,10 @@ class MyPanel extends TemplateElement {
 
     disconnectedCallback() {
         this.stopAutoRefresh();
+        if (this.fuelRetryTimer) {
+            clearTimeout(this.fuelRetryTimer);
+            this.fuelRetryTimer = null;
+        }
     }
 
     initialize() {
@@ -299,7 +309,7 @@ class MyPanel extends TemplateElement {
     }
 
     log(msg = '', level = 'DEBUG') {
-        if (!this.debugEnabled || !this.txtDebugLog) return;
+        if ((!this.debugEnabled && (level.toUpperCase() == 'DEBUG' || level.toUpperCase() == "TRACE"))|| !this.txtDebugLog) return;
         try { console.log(msg); } catch (e) { }
 
         let s;
@@ -322,6 +332,116 @@ class MyPanel extends TemplateElement {
         } catch (e) {
             return fallback;
         }
+    }
+
+    getFuelTankDefinitions() {
+        return [
+            'CENTER',
+            'CENTER2',
+            'CENTER3',
+            'LEFT MAIN',
+            'RIGHT MAIN',
+            'LEFT AUX',
+            'RIGHT AUX',
+            'LEFT TIP',
+            'RIGHT TIP'
+        ];
+    }
+
+    readFuelTankSnapshot() {
+        const snapshot = {};
+        this.getFuelTankDefinitions().forEach((tankName) => {
+            const quantity = this.getSimVar(`FUEL TANK ${tankName} QUANTITY`, 'gallons', Number.NaN);
+            if (Number.isFinite(quantity) && quantity >= 0) snapshot[tankName] = quantity;
+        });
+        this.log(`[FUEL] Fuel tank snapshot: ${JSON.stringify(snapshot)}`, 'DEBUG');
+        return snapshot;
+    }
+
+    captureFuelTankSnapshot() {
+        this.fuelTankSnapshot = this.readFuelTankSnapshot();
+    }
+
+    getFuelTankReserveGallons(tankName) {
+        // Small GA tanks scale by percent so the reserve never exceeds a fraction of their size; big tanks cap at the flat minimum.
+        const capacityGallons = this.getSimVar(`FUEL TANK ${tankName} CAPACITY`, 'gallons', Number.NaN);
+        if (!Number.isFinite(capacityGallons) || capacityGallons <= 0) return this.fuelTankMinReserveGallons;
+        return Math.min(this.fuelTankMinReserveGallons, capacityGallons * this.fuelTankMinReservePercent);
+    }
+
+    setFuelByFeedingTanks(targetFuelKg, previousSnapshot) {
+        this.log(`[FUEL] previousSnapshot = ${JSON.stringify(previousSnapshot)}`, 'DEBUG');
+        const currentSnapshot = this.readFuelTankSnapshot();
+        this.log(`[FUEL] currentSnapshot = ${JSON.stringify(currentSnapshot)}`, 'DEBUG');
+        const fuelWeightPerGallonKg = this.getSimVar('FUEL WEIGHT PER GALLON', 'kg', Number.NaN);
+        this.log(`[FUEL] fuelWeightPerGallonKg = ${fuelWeightPerGallonKg}`, 'DEBUG');
+
+        if (!previousSnapshot || !Number.isFinite(fuelWeightPerGallonKg) || fuelWeightPerGallonKg <= 0) {
+            this.log('Fuel set aborted: no valid fuel snapshot or fuel weight factor.', 'ERROR');
+            return { success: false, complete: false, leftoverKg: 0, snapshot: currentSnapshot };
+        }
+
+        const currentTankNames = Object.keys(currentSnapshot);
+        const currentFuelGallons = currentTankNames.reduce((total, tankName) => total + currentSnapshot[tankName], 0);
+        const currentFuelKg = currentFuelGallons * fuelWeightPerGallonKg;
+        this.log(`[FUEL] Current fuel: ${currentFuelKg.toFixed(1)} kg (${currentFuelGallons.toFixed(2)} gallons) across ${currentTankNames.length} tank(s).`, 'DEBUG');
+        this.log(`[FUEL] Fix Target fuel: ${targetFuelKg.toFixed(1)} kg.`, 'DEBUG');
+        const usedFuelKg = currentFuelKg - targetFuelKg;
+        const usedFuelGallons = usedFuelKg / fuelWeightPerGallonKg;
+        let remainingGallons = usedFuelGallons;
+        this.log(`[FUEL] Fuel to remove: ${usedFuelKg.toFixed(1)} kg (${usedFuelGallons.toFixed(2)} gallons).`, 'DEBUG');
+        if (usedFuelKg <= 1) {
+            this.log(`[FUEL] Fuel target reached: current fuel is within ${Math.abs(usedFuelKg).toFixed(1)} kg of the target.`, 'INFO');
+            return { success: true, complete: true, leftoverKg: 0, snapshot: currentSnapshot };
+        }
+
+        const feedingTankNames = currentTankNames.filter((tankName) => {
+            const previousQuantity = previousSnapshot[tankName];
+            return Number.isFinite(previousQuantity) && previousQuantity - currentSnapshot[tankName] > 0.01;
+        });
+        this.log(`[FUEL] Detected feeding tanks: ${feedingTankNames.join(', ')}`, 'DEBUG');
+
+        if (!feedingTankNames.length) {
+            this.log(`[FUEL] No feeding tank detected yet; waiting for the simulator to expose the active tank.`, 'DEBUG');
+            return { success: false, complete: false, leftoverKg: usedFuelKg, snapshot: currentSnapshot };
+        }
+
+        feedingTankNames.forEach((tankName, index) => {
+            const remainingTanks = feedingTankNames.length - index;
+            const reserveGallons = this.getFuelTankReserveGallons(tankName);
+            const availableGallons = Math.max(0, currentSnapshot[tankName] - reserveGallons);
+            const subtraction = Math.min(availableGallons, remainingGallons / remainingTanks);
+            const newQuantity = currentSnapshot[tankName] - subtraction;
+            remainingGallons -= subtraction;
+
+            SimVar.SetSimVarValue(`FUEL TANK ${tankName} QUANTITY`, 'gallons', newQuantity);
+            this.log(`Fuel tank ${tankName}: ${currentSnapshot[tankName].toFixed(2)} -> ${newQuantity.toFixed(2)} gallons (reserve ${reserveGallons.toFixed(1)} gal).`, 'DEBUG');
+        });
+
+        const leftoverKg = remainingGallons * fuelWeightPerGallonKg;
+        this.log(`Fuel reduction requested: ${usedFuelKg.toFixed(1)} kg across ${feedingTankNames.length} feeding tank(s); ${leftoverKg.toFixed(1)} kg remains.`, 'INFO');
+        return { success: true, complete: leftoverKg <= 1, leftoverKg: leftoverKg, snapshot: currentSnapshot };
+    }
+
+    async setFuelToTarget(targetFuelKg, previousSnapshot, attempt = 0) {
+        const result = this.setFuelByFeedingTanks(targetFuelKg, previousSnapshot);
+        this.fuelTankSnapshot = result.snapshot;
+
+        if (result.complete) return result;
+        if (attempt >= this.fuelRetryMaxAttempts) {
+            this.log(`Fuel set stopped after ${attempt + 1} attempt(s); ${result.leftoverKg.toFixed(1)} kg could not be applied.`, 'WARN');
+            return result;
+        }
+
+        this.log(`Fuel set waiting ${this.fuelRetryDelayMs} ms before attempt ${attempt + 2}.`, 'DEBUG');
+        await new Promise((resolve) => {
+            this.fuelRetryTimer = setTimeout(() => {
+                this.fuelRetryTimer = null;
+                resolve();
+            }, this.fuelRetryDelayMs);
+        });
+
+        return this.setFuelToTarget(targetFuelKg, this.fuelTankSnapshot, attempt + 1);
     }
 
     getStringVar(name, fallback) {
@@ -529,6 +649,8 @@ class MyPanel extends TemplateElement {
         }
     }
 
+    /// ==== onLookupClicked() ====
+    /// 
     async onLookupClicked() {
         const text = this.manualWaypointInput ? this.manualWaypointInput.value : '';
         const trimmedText = text.trim();
@@ -541,7 +663,7 @@ class MyPanel extends TemplateElement {
             const flightplan = await response.json();
             const origin = flightplan.origin && flightplan.origin.icao_code;
             const destination = flightplan.destination && flightplan.destination.icao_code;
-            this.log(`Flightplan: ${origin || '--'} - ${destination || '--'}`, 'INFO');
+            this.log(`[LOOKUP] Flightplan: ${origin || '--'} - ${destination || '--'}`, 'INFO');
 
             const fixes = flightplan.navlog && Array.isArray(flightplan.navlog.fix)
                 ? flightplan.navlog.fix
@@ -558,21 +680,15 @@ class MyPanel extends TemplateElement {
             this.activeFlightplanFixIndex = 0;
             this.selectInitialFlightplanFix();
 
-            if(this.debugEnabled) {
-                fixes.forEach((fix, index) => {
-                    const ident = fix && fix.ident ? fix.ident : '--';
-                    const latitude = fix && fix.pos_lat !== undefined ? fix.pos_lat : '--';
-                    const longitude = fix && fix.pos_long !== undefined ? fix.pos_long : '--';
-                    this.log(`Waypoint ${index + 1}: ${ident} (${latitude}, ${longitude})`, 'DEBUG');
-                });
-            }
+            this.refreshWaypointState();
         } catch (e) {
-            this.log(`Flightplan request failed: ${e && e.message ? e.message : e}`, 'ERROR');
+            this.log(`[LOOKUP] Flightplan request failed: ${e && e.message ? e.message : e}`, 'ERROR');
         }
     }
 
     refreshWaypointState() {
         try {
+            this.captureFuelTankSnapshot();
             const entries = this.getWaypointEntries();
 
             if (entries.length === 0) {
@@ -645,9 +761,9 @@ class MyPanel extends TemplateElement {
                 this.selectLonNode.textContent = this.formatCoordinate(selected.lon);
             }
 
-            this.log(`Waypoint ready: ${selected.ident}. Distance to waypoint: ${Number.isFinite(waypointDistanceNm) ? waypointDistanceNm.toFixed(1) : '--'} NM.`);
+            this.log(`[REFRESH] Waypoint ready: ${selected.ident}. Distance to waypoint: ${Number.isFinite(waypointDistanceNm) ? waypointDistanceNm.toFixed(1) : '--'} NM.`);
         } catch (e) {
-            this.log(`Error reading waypoint state: ${e}`, 'ERROR');
+            this.log(`[REFRESH] Error reading waypoint state: ${e}`, 'ERROR');
         }
     }
 
@@ -666,6 +782,7 @@ class MyPanel extends TemplateElement {
             }
 
             const ident = target.ident;
+            this.log(`======== Teleport to ${ident} ========`, 'INFO');
             const lat = Number(target.lat);
             const lon = Number(target.lon);
 
@@ -683,7 +800,7 @@ class MyPanel extends TemplateElement {
             let teleportLon = lon;
 
             if (this.teleportBeforeFix && this.teleportBeforeFix.checked) {
-                this.log(`Experimental lead teleport: ${this.teleportBeforeFix.checked}`, 'DEBUG');
+                this.log(`[LEAD] Experimental lead teleport: ${this.teleportBeforeFix.checked}`, 'DEBUG');
                 const groundSpeedKts = this.getSimVar(
                     'GROUND VELOCITY',
                     'knots',
@@ -702,9 +819,9 @@ class MyPanel extends TemplateElement {
                 if (Number.isFinite(leadPosition.lat) && Number.isFinite(leadPosition.lon)) {
                     teleportLat = leadPosition.lat;
                     teleportLon = leadPosition.lon;
-                    this.log(`Experimental lead teleport: ${groundSpeedKts.toFixed(1)} kt, ${leadDistanceNm.toFixed(2)} NM before ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)}.`, 'INFO');
+                    this.log(`[LEAD] Experimental lead teleport: ${groundSpeedKts.toFixed(1)} kt, ${leadDistanceNm.toFixed(2)} NM before ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)}.`, 'INFO');
                 } else {
-                    this.log(`Experimental lead teleport skipped: ground speed unavailable for ${ident}.`, 'WARN');
+                    this.log(`[LEAD] Experimental lead teleport skipped: ground speed unavailable for ${ident}.`, 'WARN');
                 }
             }
 
@@ -716,7 +833,7 @@ class MyPanel extends TemplateElement {
             // Large jumps can upset world-sim values, so pause briefly and re-check drift afterward.
             if (longDistanceTeleport) {
                 this.pauseSimulation(true);
-                this.log(`Long-distance teleport detected: ${distanceNm.toFixed(1)} NM. Pausing the simulation for ${this.longDistancePauseMs} ms to allow scenery and weather to settle.`, 'INFO');
+                this.log(`[PAUSE] Long-distance teleport detected: ${distanceNm.toFixed(1)} NM. Pausing the simulation for ${this.longDistancePauseMs} ms to allow scenery and weather to settle.`, 'INFO');
                 await this.wait(this.longDistancePauseMs);
             }
 
@@ -730,18 +847,26 @@ class MyPanel extends TemplateElement {
             SimVar.SetSimVarValue('PLANE HEADING DEGREES TRUE', 'degrees', heading);
 
             if (this.setFuelOnTeleport && this.setFuelOnTeleport.checked) {
-                this.log(`Experimental fuel set: ${this.setFuelOnTeleport.checked}.`, 'DEBUG');
+                this.log(`[FUEL] Experimental fuel set: ${this.setFuelOnTeleport.checked}.`, 'DEBUG');
                 const fuelPlanOnboardKg = Number(target.fuelPlanOnboardKg);
+
+                this.log(`[FUEL] Experimental fuel plan onboard for ${ident}: ${Number.isFinite(fuelPlanOnboardKg) ? fuelPlanOnboardKg.toFixed(1) : '--'} kg.`, 'DEBUG');
+
                 if (Number.isFinite(fuelPlanOnboardKg) && fuelPlanOnboardKg >= 0) {
                     const fuelPlanOnboardLb = fuelPlanOnboardKg * 2.2046226218;
                     try {
-                        SimVar.SetSimVarValue('FUEL TOTAL QUANTITY WEIGHT', 'pounds', fuelPlanOnboardLb);
-                        this.log(`Experimental fuel set: ${fuelPlanOnboardKg.toFixed(1)} kg (${fuelPlanOnboardLb.toFixed(1)} lb) at ${ident}.`, 'INFO');
+                        // Retries by re-feeding tanks against a fresh snapshot on each pass until converged or exhausted.
+                        const result = await this.setFuelToTarget(fuelPlanOnboardKg, this.fuelTankSnapshot);
+                        if (result.complete) {
+                            this.log(`[FUEL] Experimental fuel set: ${fuelPlanOnboardKg.toFixed(1)} kg (${fuelPlanOnboardLb.toFixed(1)} lb) at ${ident}.`, 'INFO');
+                        } else {
+                            this.log(`[FUEL] Experimental fuel set incomplete at ${ident}: ${result.leftoverKg.toFixed(1)} kg could not be applied.`, 'WARN');
+                        }
                     } catch (e) {
-                        this.log(`Experimental fuel write failed at ${ident}: ${e && e.message ? e.message : e}`, 'ERROR');
+                        this.log(`[FUEL] Experimental fuel write failed at ${ident}: ${e && e.message ? e.message : e}`, 'ERROR');
                     }
                 } else {
-                    this.log(`Experimental fuel skipped: no valid SimBrief fuel estimate for ${ident}.`, 'WARN');
+                    this.log(`[FUEL] Experimental fuel skipped: no valid SimBrief fuel estimate for ${ident}.`, 'WARN');
                 }
             }
 
@@ -755,7 +880,7 @@ class MyPanel extends TemplateElement {
                 if (Number.isFinite(ambientPressureBefore) && Number.isFinite(ambientPressureAfter)) {
                     const pressureDelta = Math.abs(ambientPressureAfter - ambientPressureBefore);
                     if (pressureDelta > this.longDistancePressureThresholdInHg) {
-                        this.log(`Pressure drift detected after long-distance teleport: ${pressureDelta.toFixed(3)} inHG. World environment changed and may be affecting altitude/flight model.`, 'WARN');
+                        this.log(`[PAUSE] Pressure drift detected after long-distance teleport: ${pressureDelta.toFixed(3)} inHG. World environment changed and may be affecting altitude/flight model.`, 'WARN');
                     }
                 }
 
@@ -763,7 +888,7 @@ class MyPanel extends TemplateElement {
                     const airspeedDelta = Math.abs(indicatedAirspeedAfter - indicatedAirspeedBefore);
                     if (airspeedDelta > this.longDistanceAirspeedThresholdKts) {
                         SimVar.SetSimVarValue('AIRSPEED INDICATED', 'knots', indicatedAirspeedBefore);
-                        this.log(`Airspeed drift corrected after long-distance teleport: ${indicatedAirspeedBefore.toFixed(1)} kt restored from ${indicatedAirspeedAfter.toFixed(1)} kt.`, 'INFO');
+                        this.log(`[PAUSE] Airspeed drift corrected after long-distance teleport: ${indicatedAirspeedBefore.toFixed(1)} kt restored from ${indicatedAirspeedAfter.toFixed(1)} kt.`, 'INFO');
                     }
                 }
 
@@ -771,9 +896,9 @@ class MyPanel extends TemplateElement {
             }
 
             this.statusNode.textContent = 'Teleported';
-            this.log(`Teleported aircraft to ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)} while preserving current altitude ${this.formatAltitude(altitudeTarget)} and facing ${this.formatCoordinate(heading)}° true.`, 'INFO');
+            this.log(`[TELEPORT] Teleported aircraft to ${ident} at ${this.formatCoordinate(teleportLat)}, ${this.formatCoordinate(teleportLon)} while preserving current altitude ${this.formatAltitude(altitudeTarget)} and facing ${this.formatCoordinate(heading)}° true.`, 'INFO');
         } catch (e) {
-            this.log(`Teleport failed: ${e}`, 'ERROR');
+            this.log(`[TELEPORT] Teleport failed: ${e}`, 'ERROR');
         }
     }
 }
