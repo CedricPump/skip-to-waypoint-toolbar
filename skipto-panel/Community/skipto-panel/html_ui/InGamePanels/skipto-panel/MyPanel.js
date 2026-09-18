@@ -197,8 +197,6 @@ class MyPanel extends TemplateElement {
         this.fuelRetryTimer = null;
         this.fuelRetryDelayMs = 3000;
         this.fuelRetryMaxAttempts = 5;
-        this.fuelTankMinReserveGallons = 30;
-        this.fuelTankMinReservePercent = 0.15;
         this.flightplanFixes = [];
         this.activeFlightplanFixIndex = 0;
         this.initialize();
@@ -259,9 +257,9 @@ class MyPanel extends TemplateElement {
             if (this.btnRefresh) this.btnRefresh.addEventListener('click', () => this.refreshWaypointState());
             if (this.waypointSelect) this.waypointSelect.addEventListener('OnValidate', () => this.onWaypointSelected());
             if (this.btnLookup) this.btnLookup.addEventListener('click', () => this.onLookupClicked());
-            if (this.autoUpdate) this.autoUpdate.addEventListener('change', () => this.onAutoUpdateChanged());
-            if (this.teleportBeforeFix) this.teleportBeforeFix.addEventListener('change', () => this.onTeleportBeforeFixChanged());
-            if (this.setFuelOnTeleport) this.setFuelOnTeleport.addEventListener('change', () => this.onSetFuelOnTeleportChanged());
+            if (this.autoUpdate) this.autoUpdate.addEventListener('OnValidate', () => this.onAutoUpdateChanged());
+            if (this.teleportBeforeFix) this.teleportBeforeFix.addEventListener('OnValidate', () => this.onTeleportBeforeFixChanged());
+            if (this.setFuelOnTeleport) this.setFuelOnTeleport.addEventListener('OnValidate', () => this.onSetFuelOnTeleportChanged());
 
             this.refreshIntervalMs = 10000;
             this.refreshTimer = null;
@@ -291,7 +289,7 @@ class MyPanel extends TemplateElement {
     }
 
     onAutoUpdateChanged() {
-        if (this.autoUpdate && this.autoUpdate.checked) {
+        if (this.autoUpdate && this.autoUpdate.toggled) {
             this.startAutoRefresh();
             this.log('Auto-update enabled: refreshing every 60 seconds.', 'INFO');
         } else {
@@ -301,11 +299,11 @@ class MyPanel extends TemplateElement {
     }
 
     onTeleportBeforeFixChanged() {
-        this.log(`Teleport before fix: ${this.teleportBeforeFix.checked}.`, 'DEBUG');
+        this.log(`Teleport before fix: ${this.teleportBeforeFix.toggled}.`, 'DEBUG');
     }
 
     onSetFuelOnTeleportChanged() {
-        this.log(`Set fuel on teleport: ${this.setFuelOnTeleport.checked}.`, 'DEBUG');
+        this.log(`Set fuel on teleport: ${this.setFuelOnTeleport.toggled}.`, 'DEBUG');
     }
 
     log(msg = '', level = 'DEBUG') {
@@ -344,7 +342,9 @@ class MyPanel extends TemplateElement {
             'LEFT AUX',
             'RIGHT AUX',
             'LEFT TIP',
-            'RIGHT TIP'
+            'RIGHT TIP',
+            'EXTERNAL1',
+            'EXTERNAL2'
         ];
     }
 
@@ -362,74 +362,56 @@ class MyPanel extends TemplateElement {
         this.fuelTankSnapshot = this.readFuelTankSnapshot();
     }
 
-    getFuelTankReserveGallons(tankName) {
-        // Small GA tanks scale by percent so the reserve never exceeds a fraction of their size; big tanks cap at the flat minimum.
-        const capacityGallons = this.getSimVar(`FUEL TANK ${tankName} CAPACITY`, 'gallons', Number.NaN);
-        if (!Number.isFinite(capacityGallons) || capacityGallons <= 0) return this.fuelTankMinReserveGallons;
-        return Math.min(this.fuelTankMinReserveGallons, capacityGallons * this.fuelTankMinReservePercent);
-    }
-
-    setFuelByFeedingTanks(targetFuelKg, previousSnapshot) {
-        this.log(`[FUEL] previousSnapshot = ${JSON.stringify(previousSnapshot)}`, 'DEBUG');
+    setFuelByPercentage(targetFuelKg) {
+        // Scale every tank by the same ratio instead of draining feeding tanks, so no tank runs dry
+        // and the fuel system can rebalance/transfer normally afterward.
         const currentSnapshot = this.readFuelTankSnapshot();
         this.log(`[FUEL] currentSnapshot = ${JSON.stringify(currentSnapshot)}`, 'DEBUG');
         const fuelWeightPerGallonKg = this.getSimVar('FUEL WEIGHT PER GALLON', 'kg', Number.NaN);
         this.log(`[FUEL] fuelWeightPerGallonKg = ${fuelWeightPerGallonKg}`, 'DEBUG');
 
-        if (!previousSnapshot || !Number.isFinite(fuelWeightPerGallonKg) || fuelWeightPerGallonKg <= 0) {
-            this.log('Fuel set aborted: no valid fuel snapshot or fuel weight factor.', 'ERROR');
-            return { success: false, complete: false, leftoverKg: 0, snapshot: currentSnapshot };
+        if (!Number.isFinite(fuelWeightPerGallonKg) || fuelWeightPerGallonKg <= 0) {
+            this.log('Fuel set aborted: invalid fuel weight factor.', 'ERROR');
+            return { success: false, complete: false, snapshot: currentSnapshot };
         }
 
-        const currentTankNames = Object.keys(currentSnapshot);
-        const currentFuelGallons = currentTankNames.reduce((total, tankName) => total + currentSnapshot[tankName], 0);
+        const tankNames = Object.keys(currentSnapshot).filter((tankName) => currentSnapshot[tankName] > 0);
+        const currentFuelGallons = tankNames.reduce((total, tankName) => total + currentSnapshot[tankName], 0);
         const currentFuelKg = currentFuelGallons * fuelWeightPerGallonKg;
-        this.log(`[FUEL] Current fuel: ${currentFuelKg.toFixed(1)} kg (${currentFuelGallons.toFixed(2)} gallons) across ${currentTankNames.length} tank(s).`, 'DEBUG');
-        this.log(`[FUEL] Fix Target fuel: ${targetFuelKg.toFixed(1)} kg.`, 'DEBUG');
-        const usedFuelKg = currentFuelKg - targetFuelKg;
-        const usedFuelGallons = usedFuelKg / fuelWeightPerGallonKg;
-        let remainingGallons = usedFuelGallons;
-        this.log(`[FUEL] Fuel to remove: ${usedFuelKg.toFixed(1)} kg (${usedFuelGallons.toFixed(2)} gallons).`, 'DEBUG');
-        if (usedFuelKg <= 1) {
-            this.log(`[FUEL] Fuel target reached: current fuel is within ${Math.abs(usedFuelKg).toFixed(1)} kg of the target.`, 'INFO');
-            return { success: true, complete: true, leftoverKg: 0, snapshot: currentSnapshot };
+        this.log(`[FUEL] Current fuel: ${currentFuelKg.toFixed(1)} kg (${currentFuelGallons.toFixed(2)} gallons) across ${tankNames.length} tank(s).`, 'DEBUG');
+        this.log(`[FUEL] Target fuel: ${targetFuelKg.toFixed(1)} kg.`, 'DEBUG');
+
+        const deltaKg = currentFuelKg - targetFuelKg;
+        if (Math.abs(deltaKg) <= 1) {
+            this.log(`[FUEL] Fuel target reached: current fuel is within ${Math.abs(deltaKg).toFixed(1)} kg of the target.`, 'INFO');
+            return { success: true, complete: true, snapshot: currentSnapshot };
         }
 
-        const feedingTankNames = currentTankNames.filter((tankName) => {
-            const previousQuantity = previousSnapshot[tankName];
-            return Number.isFinite(previousQuantity) && previousQuantity - currentSnapshot[tankName] > 0.01;
-        });
-        this.log(`[FUEL] Detected feeding tanks: ${feedingTankNames.join(', ')}`, 'DEBUG');
-
-        if (!feedingTankNames.length) {
-            this.log(`[FUEL] No feeding tank detected yet; waiting for the simulator to expose the active tank.`, 'DEBUG');
-            return { success: false, complete: false, leftoverKg: usedFuelKg, snapshot: currentSnapshot };
+        if (!tankNames.length || currentFuelKg <= 0) {
+            this.log('[FUEL] No tanks with fuel detected; cannot scale.', 'WARN');
+            return { success: false, complete: false, snapshot: currentSnapshot };
         }
 
-        feedingTankNames.forEach((tankName, index) => {
-            const remainingTanks = feedingTankNames.length - index;
-            const reserveGallons = this.getFuelTankReserveGallons(tankName);
-            const availableGallons = Math.max(0, currentSnapshot[tankName] - reserveGallons);
-            const subtraction = Math.min(availableGallons, remainingGallons / remainingTanks);
-            const newQuantity = currentSnapshot[tankName] - subtraction;
-            remainingGallons -= subtraction;
+        const percentage = targetFuelKg / currentFuelKg;
+        this.log(`[FUEL] Scaling all tanks to ${(percentage * 100).toFixed(1)}% of their current quantity.`, 'DEBUG');
 
+        tankNames.forEach((tankName) => {
+            const newQuantity = currentSnapshot[tankName] * percentage;
             SimVar.SetSimVarValue(`FUEL TANK ${tankName} QUANTITY`, 'gallons', newQuantity);
-            this.log(`Fuel tank ${tankName}: ${currentSnapshot[tankName].toFixed(2)} -> ${newQuantity.toFixed(2)} gallons (reserve ${reserveGallons.toFixed(1)} gal).`, 'DEBUG');
+            this.log(`Fuel tank ${tankName}: ${currentSnapshot[tankName].toFixed(2)} -> ${newQuantity.toFixed(2)} gallons (${(percentage * 100).toFixed(1)}%).`, 'DEBUG');
         });
 
-        const leftoverKg = remainingGallons * fuelWeightPerGallonKg;
-        this.log(`Fuel reduction requested: ${usedFuelKg.toFixed(1)} kg across ${feedingTankNames.length} feeding tank(s); ${leftoverKg.toFixed(1)} kg remains.`, 'INFO');
-        return { success: true, complete: leftoverKg <= 1, leftoverKg: leftoverKg, snapshot: currentSnapshot };
+        this.log(`Fuel scaled from ${currentFuelKg.toFixed(1)} kg to ${targetFuelKg.toFixed(1)} kg across ${tankNames.length} tank(s).`, 'INFO');
+        return { success: true, complete: true, snapshot: currentSnapshot };
     }
 
     async setFuelToTarget(targetFuelKg, previousSnapshot, attempt = 0) {
-        const result = this.setFuelByFeedingTanks(targetFuelKg, previousSnapshot);
-        this.fuelTankSnapshot = result.snapshot;
+        const result = this.setFuelByPercentage(targetFuelKg);
+        this.fuelTankSnapshot = this.readFuelTankSnapshot();
 
         if (result.complete) return result;
         if (attempt >= this.fuelRetryMaxAttempts) {
-            this.log(`Fuel set stopped after ${attempt + 1} attempt(s); ${result.leftoverKg.toFixed(1)} kg could not be applied.`, 'WARN');
+            this.log(`Fuel set stopped after ${attempt + 1} attempt(s).`, 'WARN');
             return result;
         }
 
@@ -799,8 +781,8 @@ class MyPanel extends TemplateElement {
             let teleportLat = lat;
             let teleportLon = lon;
 
-            if (this.teleportBeforeFix && this.teleportBeforeFix.checked) {
-                this.log(`[LEAD] Experimental lead teleport: ${this.teleportBeforeFix.checked}`, 'DEBUG');
+            if (this.teleportBeforeFix && this.teleportBeforeFix.toggled) {
+                this.log(`[LEAD] Experimental lead teleport: ${this.teleportBeforeFix.toggled}`, 'DEBUG');
                 const groundSpeedKts = this.getSimVar(
                     'GROUND VELOCITY',
                     'knots',
@@ -846,8 +828,8 @@ class MyPanel extends TemplateElement {
             const heading = approachBearing;
             SimVar.SetSimVarValue('PLANE HEADING DEGREES TRUE', 'degrees', heading);
 
-            if (this.setFuelOnTeleport && this.setFuelOnTeleport.checked) {
-                this.log(`[FUEL] Experimental fuel set: ${this.setFuelOnTeleport.checked}.`, 'DEBUG');
+            if (this.setFuelOnTeleport && this.setFuelOnTeleport.toggled) {
+                this.log(`[FUEL] Experimental fuel set: ${this.setFuelOnTeleport.toggled}.`, 'DEBUG');
                 const fuelPlanOnboardKg = Number(target.fuelPlanOnboardKg);
 
                 this.log(`[FUEL] Experimental fuel plan onboard for ${ident}: ${Number.isFinite(fuelPlanOnboardKg) ? fuelPlanOnboardKg.toFixed(1) : '--'} kg.`, 'DEBUG');
@@ -855,12 +837,12 @@ class MyPanel extends TemplateElement {
                 if (Number.isFinite(fuelPlanOnboardKg) && fuelPlanOnboardKg >= 0) {
                     const fuelPlanOnboardLb = fuelPlanOnboardKg * 2.2046226218;
                     try {
-                        // Retries by re-feeding tanks against a fresh snapshot on each pass until converged or exhausted.
+                        // Scales all tanks by the same percentage; retries once more if the sim hasn't settled yet.
                         const result = await this.setFuelToTarget(fuelPlanOnboardKg, this.fuelTankSnapshot);
                         if (result.complete) {
                             this.log(`[FUEL] Experimental fuel set: ${fuelPlanOnboardKg.toFixed(1)} kg (${fuelPlanOnboardLb.toFixed(1)} lb) at ${ident}.`, 'INFO');
                         } else {
-                            this.log(`[FUEL] Experimental fuel set incomplete at ${ident}: ${result.leftoverKg.toFixed(1)} kg could not be applied.`, 'WARN');
+                            this.log(`[FUEL] Experimental fuel set incomplete at ${ident}.`, 'WARN');
                         }
                     } catch (e) {
                         this.log(`[FUEL] Experimental fuel write failed at ${ident}: ${e && e.message ? e.message : e}`, 'ERROR');

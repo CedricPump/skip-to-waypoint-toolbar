@@ -20,6 +20,7 @@
     <link rel="import" href="/templates/ToggleButton/ToggleButton.html" />
     <link rel="import" href="/templates/tabMenu/tabMenu.html" />
     <link rel="import" href="/templates/NewListButton/NewListButton.html" />
+    <link rel="import" href="/templates/toggleButton/toggleButton.html" />
 
     <script type="text/javascript" src="/Pages/VCockpit/Instruments/Shared/BaseInstrument.js"></script>
     <script type="text/javascript" src="/JS/debug.js"></script>
@@ -98,20 +99,11 @@
                     <button id="btnRefresh" class="panel-btn" type="button">Refresh</button>
                 </div>
 
-                <label class="checkbox-options">
-                    <input id="set-fuel-on-teleport" type="checkbox" />
-                    <span>Set fuel on teleport (experimental)</span>
-                </label>
+                <toggle-button id="set-fuel-on-teleport" class="panel-toggle condensed-interactive" title="Set fuel on teleport (experimental)" full-line-select></toggle-button>
 
-                <label class="checkbox-options">
-                    <input id="teleport-before-fix" type="checkbox" checked/>
-                    <span>Teleport before fix</span>
-                </label>
+                <toggle-button id="teleport-before-fix" class="panel-toggle condensed-interactive" title="Teleport before fix" defaultValue="true" full-line-select></toggle-button>
 
-                <label class="checkbox-options">
-                    <input id="auto-update" type="checkbox" />
-                    <span>Auto-update every 10 seconds</span>
-                </label>
+                <toggle-button id="auto-update" class="panel-toggle condensed-interactive" title="Auto-update every 10 seconds" full-line-select></toggle-button>
 
                 <div class="debug-group">
                     <label id="debug-log-label" for="txt-debug-log">Debug Log:</label>
